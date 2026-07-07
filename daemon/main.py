@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from daemon.config import settings
 from daemon.risk_engine import RiskEngine
 from daemon.signer import CryptographicSigner
+from daemon.x402_middleware import X402Middleware
 
 # Configure Logging
 logging.basicConfig(
@@ -60,6 +61,12 @@ app = FastAPI(
     title="Project Indemnify - Off-Chain Risk Middleware Daemon",
     description="Risk simulation, threat analysis, and cryptographic underwriting engine for M2M economy.",
     version="1.0.0"
+)
+
+# Register x402 Payment Middleware
+app.add_middleware(
+    X402Middleware,
+    protected_paths={"/v1/risk/simulate", "/v1/insurance/quote"}
 )
 
 @app.exception_handler(Exception)

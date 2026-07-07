@@ -1,0 +1,105 @@
+import json
+import logging
+from typing import Set, Dict
+from fastapi import Request, Response
+from web3 import Web3
+from starlette.middleware.base import BaseHTTPMiddleware
+from .config import settings
+
+logger = logging.getLogger("indemnify.x402")
+
+# In-memory cache for processed transaction hashes to prevent replay attacks
+PROCESSED_TX_HASHES: Set[str] = set()
+
+# USDT0 Contract Address on X Layer Mainnet (Fallback to Mock for local dev if needed)
+USDT0_ADDRESS = "0x779ded0c9e1022225f8e0630b35a9b54be713736" if settings.chain_id != 31337 else "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+
+# Basic ERC20 Transfer event signature: Transfer(address indexed from, address indexed to, uint256 value)
+# Topic 0: keccak256("Transfer(address,address,uint256)")
+TRANSFER_EVENT_SIGNATURE = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+class X402Middleware(BaseHTTPMiddleware):
+    def __init__(self, app, protected_paths: Set[str]):
+        super().__init__(app)
+        self.protected_paths = protected_paths
+        self.w3 = Web3(Web3.HTTPProvider(settings.rpc_provider_url))
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path not in self.protected_paths:
+            return await call_next(request)
+            
+        # Check for X-Payment-Tx header (or PAYMENT-SIGNATURE)
+        tx_hash = request.headers.get("X-Payment-Tx") or request.headers.get("PAYMENT-SIGNATURE")
+        
+        if not tx_hash:
+            return self._build_402_response()
+            
+        # Verify the transaction
+        if not self._verify_payment(tx_hash):
+            return Response(
+                content=json.dumps({"error": "Invalid or unverified payment transaction"}),
+                status_code=403,
+                media_type="application/json"
+            )
+            
+        return await call_next(request)
+
+    def _build_402_response(self) -> Response:
+        """Returns the standard x402 challenge"""
+        payload = {
+            "error": "Payment Required",
+            "payment_requirements": {
+                "amount": str(settings.x402_fee_usdt),
+                "currency": "USDT0",
+                "token_address": USDT0_ADDRESS,
+                "pay_to_address": settings.x402_treasury_address,
+                "network_id": str(settings.chain_id),
+                "chain": "X Layer"
+            }
+        }
+        return Response(
+            content=json.dumps(payload),
+            status_code=402,
+            media_type="application/json"
+        )
+        
+    def _verify_payment(self, tx_hash: str) -> bool:
+        """Verifies the on-chain USDT0 transfer"""
+        if tx_hash in PROCESSED_TX_HASHES:
+            logger.warning(f"Replay attack detected with tx: {tx_hash}")
+            return False
+            
+        try:
+            receipt = self.w3.eth.get_transaction_receipt(tx_hash)
+            if receipt.status != 1:
+                logger.error(f"Transaction {tx_hash} failed on-chain.")
+                return False
+                
+            # Decimals: USDT0 is 6 decimals. On Anvil test, Mock ERC20 might be 18, but for testing we assume 6 or adjust. 
+            # We'll use 6 decimals for the default USDT0.
+            expected_amount_raw = int(settings.x402_fee_usdt * (10**6))
+            treasury_address_padded = "0x000000000000000000000000" + settings.x402_treasury_address.lower().replace("0x", "")
+            
+            valid_transfer_found = False
+            
+            for log in receipt.logs:
+                if log.address.lower() == USDT0_ADDRESS.lower():
+                    if len(log.topics) == 3 and log.topics[0].hex() == TRANSFER_EVENT_SIGNATURE.replace("0x", ""):
+                        to_address = "0x" + log.topics[2].hex()
+                        if to_address.lower() == treasury_address_padded:
+                            # Verify amount (data field)
+                            transfer_amount = int(log.data.hex(), 16)
+                            if transfer_amount >= expected_amount_raw:
+                                valid_transfer_found = True
+                                break
+                                
+            if valid_transfer_found:
+                PROCESSED_TX_HASHES.add(tx_hash)
+                return True
+            else:
+                logger.error(f"Transaction {tx_hash} did not contain a valid transfer to treasury.")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error verifying payment tx {tx_hash}: {e}")
+            return False

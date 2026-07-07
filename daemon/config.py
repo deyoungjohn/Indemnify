@@ -43,6 +43,18 @@ class Settings(BaseSettings):
         validation_alias="FIXED_UNDERWRITER_MARGIN"
     )
 
+    # x402 Payment Settings
+    x402_fee_usdt: float = Field(
+        default=0.01,
+        validation_alias="X402_FEE_USDT"
+    )
+    
+    # Defaulting to Oracle/Deployer public address as treasury
+    x402_treasury_address: str = Field(
+        default=os.environ.get("TREASURY_ADDRESS") or "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", # Default Anvil Deployer
+        validation_alias="X402_TREASURY_ADDRESS"
+    )
+
 settings = Settings()
 
 # Telemetry warning for public or unauthenticated RPC nodes
