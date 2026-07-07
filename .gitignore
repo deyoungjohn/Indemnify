@@ -1,0 +1,33 @@
+# Compiler files
+cache/
+out/
+
+# Commonly ignored directories
+.logs/
+.ignore/
+
+# Ignores development broadcast logs
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Node
+node_modules/
