@@ -64,10 +64,14 @@ class X402Middleware(BaseHTTPMiddleware):
         )
         
     def _verify_payment(self, tx_hash: str) -> bool:
-        """Verifies the on-chain USDT0 transfer"""
+        """Verifies the on-chain USDT0 transfer by reading the logs (supports AA and relayed txs)"""
         if tx_hash in PROCESSED_TX_HASHES:
             logger.warning(f"Replay attack detected with tx: {tx_hash}")
             return False
+            
+        # Ensure tx_hash is properly formatted
+        if not tx_hash.startswith("0x"):
+            tx_hash = "0x" + tx_hash
             
         try:
             receipt = self.w3.eth.get_transaction_receipt(tx_hash)
@@ -75,24 +79,38 @@ class X402Middleware(BaseHTTPMiddleware):
                 logger.error(f"Transaction {tx_hash} failed on-chain.")
                 return False
                 
-            # Decimals: USDT0 is 6 decimals. On Anvil test, Mock ERC20 might be 18, but for testing we assume 6 or adjust. 
-            # We'll use 6 decimals for the default USDT0.
+            # Decimals: USDT0 is 6 decimals.
             expected_amount_raw = int(settings.x402_fee_usdt * (10**6))
-            treasury_address_padded = "0x000000000000000000000000" + settings.x402_treasury_address.lower().replace("0x", "")
+            expected_treasury = settings.x402_treasury_address.lower()
             
             valid_transfer_found = False
             
             for log in receipt.logs:
                 if log.address.lower() == USDT0_ADDRESS.lower():
-                    if len(log.topics) == 3 and log.topics[0].hex() == TRANSFER_EVENT_SIGNATURE.replace("0x", ""):
-                        to_address = "0x" + log.topics[2].hex()
-                        if to_address.lower() == treasury_address_padded:
-                            # Verify amount (data field)
-                            transfer_amount = int(log.data.hex(), 16)
-                            if transfer_amount >= expected_amount_raw:
-                                valid_transfer_found = True
-                                break
-                                
+                    if len(log.topics) == 3:
+                        # Safely parse topic 0 regardless of HexBytes implementation
+                        topic0 = log.topics[0].hex().lower().replace("0x", "")
+                        expected_topic0 = TRANSFER_EVENT_SIGNATURE.lower().replace("0x", "")
+                        
+                        if topic0 == expected_topic0:
+                            # Safely extract the recipient address from topic 2 (strip padding)
+                            to_topic = log.topics[2].hex().lower().replace("0x", "")
+                            to_address_extracted = "0x" + to_topic[-40:]
+                            
+                            if to_address_extracted == expected_treasury:
+                                # Safely parse the transfer amount from the data field
+                                try:
+                                    if hasattr(log.data, 'hex'):
+                                        transfer_amount = int(log.data.hex(), 16)
+                                    else:
+                                        transfer_amount = int(log.data, 16)
+                                except Exception:
+                                    transfer_amount = 0
+                                    
+                                if transfer_amount >= expected_amount_raw:
+                                    valid_transfer_found = True
+                                    break
+                                    
             if valid_transfer_found:
                 PROCESSED_TX_HASHES.add(tx_hash)
                 return True
