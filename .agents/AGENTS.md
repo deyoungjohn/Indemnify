@@ -74,3 +74,17 @@ When modeling the system components in subsequent tasks, assume the following st
 
 ---
 **CONFIRMATION DIRECTIVE:** Acknowledge receipt of this system initialization. Summarize the structural relationship between the non-binary bracketed risk matrix and the off-chain MCP simulation architecture to confirm complete alignment. **Do not write code yet.**
+
+---
+
+## 6. Development Operations & Playbooks
+
+### Contract Verification on OKLink (X Layer)
+When verifying smart contracts on X Layer via OKLink, do NOT use the standard `--etherscan-api-key` flag or the standard API endpoint, as it often fails or requires complex API key setups. 
+Instead, use the `verify-source-code-plugin` endpoint which works natively without an API key:
+
+```bash
+forge verify-contract <CONTRACT_ADDRESS> <CONTRACT_PATH>:<CONTRACT_NAME> \
+  --verifier oklink \
+  --verifier-url "https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER"
+```
