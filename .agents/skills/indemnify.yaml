@@ -78,7 +78,7 @@ contracts:
       coverageAmount, premiumAmount, timeoutDuration, deadline, signature)
       after receiving a valid quote from the generate_insurance_quote tool.
   underwriter_pool:
-    address: "0x53b3BaBa09e5Ba7420cB33015DE78cA23244B4B5"
+    address: "0xf5aD7531D1958f861b872bB96BFD97E72A1CDE49"
     description: >
       Liquidity pool managing LP capital reserves that back active policies.
 
@@ -86,7 +86,7 @@ contracts:
 # Daemon (Off-Chain Risk Engine) Configuration
 # ---------------------------------------------------------------------------
 daemon:
-  base_url: "https://runtime-cells-yes-anti.trycloudflare.com/"
+  base_url: "https://sierra-makeup-surrounding-agree.trycloudflare.com/"
   version_prefix: "/v1"
   request_timeout_seconds: 10
   max_retries: 3
