@@ -1,0 +1,387 @@
+# =============================================================================
+# INDEMNIFY — OKX AGENT SKILL DEFINITION
+# Project:    Indemnify — Autonomous Parametric Risk Engine
+# Network:    X Layer (EVM-compatible ZK-Rollup, Chain ID 196)
+# Version:    1.0.0
+# Asset:      USDT0 (0x779ded0c9e1022225f8e0630b35a9b54be713736)
+# Maintainer: Indemnify Protocol Team
+# =============================================================================
+#
+# PURPOSE
+# -------
+# This file registers Indemnify as a native Skill on the OKX AI Marketplace
+# Onchain OS. It exposes two callable tools to any autonomous agent operating
+# within the ecosystem:
+#
+#   1. generate_insurance_quote  — Full risk-simulation + signed premium quote
+#   2. simulate_transaction_risk — Lightweight threat-matrix dry-run only
+#
+# MANDATORY AGENT CONSUMER INSTRUCTIONS
+# --------------------------------------
+# BEFORE executing any high-value cross-chain bridge, complex DeFi swap,
+# multi-step arbitrage loop, or inter-protocol staking transaction, you MUST
+# invoke the `generate_insurance_quote` tool with the raw transaction details.
+#
+# Decision tree:
+#   - If `P_fail` >= 7500 (>=75% failure probability) -> ABORT the transaction.
+#     The risk is above the tolerable threshold for autonomous execution.
+#   - If `premium_amount` exceeds your configured risk budget -> ABORT.
+#     Log the refusal and alert the orchestrating agent.
+#   - Otherwise -> Capture the `signature`, `quote_id`, `deadline`, and
+#     `premium_amount` from the response. Route the premium to the
+#     `ParametricEscrow.sol` contract via its `createPolicy` function using
+#     those exact values. The signature is oracle-bound and time-locked;
+#     it expires after `deadline` (Unix timestamp). Do NOT reuse quote IDs.
+# =============================================================================
+
+skill:
+  name: indemnify
+  display_name: "Indemnify — Parametric Risk Engine"
+  version: "1.0.0"
+  description: |
+    Indemnify is an autonomous parametric insurance underwriter purpose-built
+    for the machine-to-machine (M2M) economy on the OKX AI Marketplace.
+    It intercepts high-risk transactions, simulates EVM execution on a
+    sandboxed X Layer fork, computes a failure probability (P_fail), and
+    returns a cryptographically signed premium quote. The signature is
+    consumed directly by the ParametricEscrow.sol on-chain settlement
+    contract to open a live underwritten policy.
+  author: "Indemnify Protocol"
+  license: "MIT"
+  tags:
+    - risk-management
+    - insurance
+    - defi
+    - x-layer
+    - parametric
+    - m2m
+    - autonomous-agents
+
+# ---------------------------------------------------------------------------
+# Network & Contract Configuration
+# ---------------------------------------------------------------------------
+network:
+  chain_id: 196
+  chain_name: "X Layer Mainnet"
+  rpc_url: "https://rpc.xlayer.tech"
+  explorer: "https://www.oklink.com/xlayer"
+
+contracts:
+  usdt0_asset:
+    address: "0x779ded0c9e1022225f8e0630b35a9b54be713736"
+    symbol: "USDT0"
+    decimals: 18
+  parametric_escrow:
+    address: "0x4B218726007858FC77fb2Aa476bd547d13f14670"
+    description: >
+      Core settlement contract. Call createPolicy(quoteId, asset,
+      coverageAmount, premiumAmount, timeoutDuration, deadline, signature)
+      after receiving a valid quote from the generate_insurance_quote tool.
+  underwriter_pool:
+    address: "0x53b3BaBa09e5Ba7420cB33015DE78cA23244B4B5"
+    description: >
+      Liquidity pool managing LP capital reserves that back active policies.
+
+# ---------------------------------------------------------------------------
+# Daemon (Off-Chain Risk Engine) Configuration
+# ---------------------------------------------------------------------------
+daemon:
+  base_url: "https://runtime-cells-yes-anti.trycloudflare.com/"
+  version_prefix: "/v1"
+  request_timeout_seconds: 10
+  max_retries: 3
+  retry_backoff_seconds: 1.0
+
+# ---------------------------------------------------------------------------
+# Tool Definitions — exposed to OKX Onchain OS agent runtime
+# ---------------------------------------------------------------------------
+tools:
+
+  # -------------------------------------------------------------------------
+  # Tool 1: generate_insurance_quote
+  # Primary tool. Agents MUST call this before executing risky transactions.
+  # -------------------------------------------------------------------------
+  - name: generate_insurance_quote
+    display_name: "Generate Parametric Insurance Quote"
+    description: |
+      Runs a full risk simulation (EVM dry-run, bytecode threat matrix, and
+      P_fail computation) and returns an oracle-signed, time-locked premium
+      quote. The returned `signature` maps to a unique `quote_id` and must be
+      passed verbatim to ParametricEscrow.sol::createPolicy().
+
+      MANDATORY AGENT BEHAVIOR:
+        Call this tool BEFORE executing any of the following transaction types:
+          - Cross-chain bridge transfers (value > $500 USD equivalent)
+          - Multi-hop DeFi swaps involving 3 or more protocols
+          - Long-running arbitrage loops (>60 seconds execution window)
+          - Interactions with newly deployed or unverified smart contracts
+
+        Evaluate the returned P_fail score (0-10000, basis points):
+          - 0-2499    -> Low risk. Proceed with transaction.
+          - 2500-4999 -> Medium risk. Proceed with active policy coverage.
+          - 5000-7499 -> High risk. Reduce position size or abort.
+          - 7500-10000 -> CRITICAL. ABORT the transaction immediately.
+
+        If premium_amount (in asset base units) exceeds your per-trade
+        risk budget, ABORT regardless of the P_fail score.
+
+        On success, record quote_id and deadline in your execution log.
+        The quote is valid for 300 seconds from generation. Do NOT reuse it.
+
+    endpoint:
+      method: POST
+      path: "/v1/insurance/quote"
+
+    input_schema:
+      type: object
+      required:
+        - client_address
+        - target_contract
+        - calldata_hex
+        - coverage_requested
+        - timeout_duration
+      properties:
+        client_address:
+          type: string
+          format: ethereum-address
+          pattern: "^0x[0-9a-fA-F]{40}$"
+          description: >
+            The checksummed EVM address of the agent or EOA wallet that will
+            be the policyholder on ParametricEscrow.sol. This address is
+            embedded into the oracle signature and cannot be changed post-quote.
+          example: "0xAbCd1234abcd1234AbCd1234abcd1234AbCd1234"
+
+        target_contract:
+          type: string
+          format: ethereum-address
+          pattern: "^0x[0-9a-fA-F]{40}$"
+          description: >
+            The checksummed EVM address of the smart contract that will receive
+            the transaction being insured (e.g., a DEX router, bridge, or
+            staking vault). Used to fetch on-chain bytecode for risk analysis.
+          example: "0xRouterContractAddress000000000000000000000"
+
+        calldata_hex:
+          type: string
+          pattern: "^(0x)?[0-9a-fA-F]*$"
+          description: >
+            The ABI-encoded transaction calldata in hexadecimal format,
+            including the 4-byte function selector. This is the exact payload
+            that would be broadcast to the network. The risk engine
+            disassembles this to detect malicious control flows, reentrancy
+            vectors, and dangerous external calls.
+          example: "0x38ed1739000000000000000000000000..."
+
+        coverage_requested:
+          type: integer
+          minimum: 1
+          description: >
+            The maximum payout amount the policy should cover, denominated in
+            the asset's base units (e.g., for USDT0 with 18 decimals, 1 USDT0
+            = 1000000000000000000). The premium is calculated as a function of
+            this value and the computed P_fail score.
+          example: 1000000000000000000000
+
+        timeout_duration:
+          type: integer
+          minimum: 60
+          maximum: 604800
+          description: >
+            The maximum duration (in seconds) the insured transaction is
+            permitted to remain in a pending/executing state before the policy
+            is eligible for a partial cashout. Minimum: 60s. Maximum: 7 days.
+            For cross-chain bridges, set this to the maximum estimated
+            finality time plus a 20% buffer.
+          example: 3600
+
+        asset:
+          type: string
+          format: ethereum-address
+          pattern: "^0x[0-9a-fA-F]{40}$"
+          description: >
+            Optional. The ERC-20 stablecoin contract address used to
+            denominate coverage and premium. Defaults to USDT0
+            (0x779ded0c9e1022225f8e0630b35a9b54be713736) on X Layer if omitted.
+          example: "0x779ded0c9e1022225f8e0630b35a9b54be713736"
+
+    output_schema:
+      type: object
+      required:
+        - premium_amount
+        - quote_id
+        - deadline
+        - signature
+        - P_fail
+      properties:
+        premium_amount:
+          type: integer
+          description: >
+            The insurance premium owed by the agent, in the asset's base units.
+            This exact value must be passed as premiumAmount in the
+            createPolicy() call to ParametricEscrow.sol. The escrow
+            contract will pull this from the agent's approved token balance.
+          example: 15000000000000000000
+
+        quote_id:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{64}$"
+          description: >
+            A unique 32-byte (bytes32) identifier for this quote, hex-encoded
+            with 0x prefix. Serves as the nonce and idempotency key for the
+            escrow contract. Reusing a quote_id will cause the on-chain
+            createPolicy() call to revert.
+          example: "0xdeadbeef00000000000000000000000000000000000000000000000000000001"
+
+        deadline:
+          type: integer
+          description: >
+            Unix timestamp (seconds since epoch) after which this signed quote
+            expires. The createPolicy() on-chain call MUST be submitted
+            before this deadline or it will revert. Typically 300 seconds
+            (~5 minutes) from quote generation time.
+          example: 1751849400
+
+        signature:
+          type: string
+          pattern: "^0x[0-9a-fA-F]{130}$"
+          description: >
+            EIP-191 oracle signature (65 bytes, hex-encoded with 0x prefix)
+            over the packed policy parameters. The ParametricEscrow.sol
+            contract will recover the signer and verify it matches the
+            registered Oracle address before opening the policy. Do NOT
+            modify or truncate this value.
+          example: "0xaabbcc...ff1b"
+
+        P_fail:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: >
+            Failure probability in basis points (bps). 10000 = 100% failure
+            certainty. Use this metric to make the go/no-go execution decision.
+            Scores >= 7500 indicate critical risk and MUST trigger an abort.
+          example: 1250
+
+        detected_vectors:
+          type: array
+          items:
+            type: string
+          description: >
+            List of human-readable risk vector strings identified during
+            bytecode analysis and EVM simulation. Informational only.
+          example:
+            - "SLIPPAGE_RISK"
+            - "UNVERIFIED_EXTERNAL_CALL"
+
+  # -------------------------------------------------------------------------
+  # Tool 2: simulate_transaction_risk
+  # Lightweight dry-run. Use for pre-flight checks without generating a quote.
+  # -------------------------------------------------------------------------
+  - name: simulate_transaction_risk
+    display_name: "Simulate Transaction Risk (Dry Run)"
+    description: |
+      Runs a sandboxed EVM simulation of the target transaction against live
+      X Layer state and returns a threat matrix with the computed P_fail score.
+      Does NOT generate a signed quote or open an underwriting position.
+      Use this tool for lightweight pre-flight risk assessment when you need
+      risk intelligence without committing to an insurance policy.
+
+    endpoint:
+      method: POST
+      path: "/v1/risk/simulate"
+
+    input_schema:
+      type: object
+      required:
+        - client_address
+        - target_contract
+        - calldata_hex
+        - coverage_requested
+      properties:
+        client_address:
+          type: string
+          format: ethereum-address
+          description: "The agent or EOA address originating the transaction."
+          example: "0xAbCd1234abcd1234AbCd1234abcd1234AbCd1234"
+
+        target_contract:
+          type: string
+          format: ethereum-address
+          description: "The destination contract address receiving the call."
+          example: "0xTargetContract0000000000000000000000000"
+
+        calldata_hex:
+          type: string
+          description: "Hex-encoded ABI calldata including the 4-byte selector."
+          example: "0x38ed1739..."
+
+        value_wei:
+          type: integer
+          default: 0
+          description: "Native ETH value (in wei) accompanying the call. Default: 0."
+          example: 0
+
+        coverage_requested:
+          type: integer
+          description: "Requested coverage amount in asset base units."
+          example: 1000000000000000000000
+
+    output_schema:
+      type: object
+      properties:
+        is_executable:
+          type: boolean
+          description: "True if the simulation completed without a hard revert."
+          example: true
+
+        detected_vectors:
+          type: array
+          items:
+            type: string
+          description: "Risk vectors identified during analysis."
+          example:
+            - "REENTRANCY_RISK"
+            - "HIGH_GAS_USAGE"
+
+        P_fail:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          description: "Failure probability in basis points (0 = safe, 10000 = certain failure)."
+          example: 3200
+
+# ---------------------------------------------------------------------------
+# Rate Limits & SLA Targets
+# ---------------------------------------------------------------------------
+rate_limits:
+  generate_insurance_quote:
+    requests_per_minute: 30
+    burst: 10
+  simulate_transaction_risk:
+    requests_per_minute: 120
+    burst: 40
+
+sla:
+  simulate_latency_target_ms: 200
+  quote_latency_target_ms: 500
+  uptime_target_percent: 99.9
+
+# ---------------------------------------------------------------------------
+# Error Codes Reference (for agent runtime error handling)
+# ---------------------------------------------------------------------------
+error_codes:
+  QUOTE_EXPIRED:
+    http_status: 410
+    description: "The quote deadline has passed. Request a fresh quote."
+  QUOTE_ID_REUSED:
+    http_status: 409
+    description: "This quote_id has already been consumed on-chain."
+  SIMULATION_FAILED:
+    http_status: 500
+    description: "EVM simulation encountered an internal error. Treat as P_fail=10000."
+  RATE_LIMIT_EXCEEDED:
+    http_status: 429
+    description: "Too many requests. Back off and retry after the Retry-After header duration."
+  INVALID_ADDRESS:
+    http_status: 422
+    description: "One or more Ethereum addresses failed checksum validation."

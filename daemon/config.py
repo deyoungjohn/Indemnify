@@ -49,9 +49,8 @@ class Settings(BaseSettings):
         validation_alias="X402_FEE_USDT"
     )
     
-    # Defaulting to Oracle/Deployer public address as treasury
+    # Treasury address to receive API fees. MUST be explicitly configured.
     x402_treasury_address: str = Field(
-        default=os.environ.get("TREASURY_ADDRESS") or "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", # Default Anvil Deployer
         validation_alias="X402_TREASURY_ADDRESS"
     )
 
