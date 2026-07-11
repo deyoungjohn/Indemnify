@@ -75,8 +75,8 @@ async def main():
     withdraw_func = pool_contract.functions.withdraw(max_assets, deployer.address, deployer.address)
     await send_tx(w3, deployer, withdraw_func, chain_id)
     
-    # 3. Transfer 10.12 USDT back to Client
-    refund_amount = 10120000  # 10.12 USDT
+    # 3. Transfer 5.48 USDT back to Client
+    refund_amount = 5480000  # 5.48 USDT
     print(f"\nTransferring {refund_amount / 10**6:.6f} USDT from Deployer to Client Wallet...")
     
     erc20_abi = [

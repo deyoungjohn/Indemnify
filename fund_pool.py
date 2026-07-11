@@ -5,7 +5,7 @@ from web3 import AsyncWeb3
 from web3.providers import AsyncHTTPProvider
 
 async def send_tx(w3, account, tx_func, chain_id):
-    nonce = await w3.eth.get_transaction_count(account.address)
+    nonce = await w3.eth.get_transaction_count(account.address, "pending")
     try:
         gas_est = await tx_func.estimate_gas({"from": account.address})
         gas = int(gas_est * 1.25)
