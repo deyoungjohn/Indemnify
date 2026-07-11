@@ -353,6 +353,29 @@ tools:
           description: "Failure probability in basis points (0 = safe, 10000 = certain failure)."
           example: 3200
 
+  # -------------------------------------------------------------------------
+  # Tool 3: get_agent_runbook
+  # Returns integration instructions for agents using AA wallets.
+  # -------------------------------------------------------------------------
+  - name: get_agent_runbook
+    display_name: "Get Agent Runbook"
+    description: |
+      MUST READ before calling generate_insurance_quote! Returns the official
+      guide on how to integrate with Indemnify using an AA wallet, avoiding
+      5-minute expirations and silent EVM ABI decoding errors.
+    endpoint:
+      method: GET
+      path: "/v1/agent/runbook"
+    input_schema:
+      type: object
+      properties: {}
+    output_schema:
+      type: object
+      properties:
+        runbook:
+          type: string
+          description: "Markdown formatted integration guide."
+
 # ---------------------------------------------------------------------------
 # Rate Limits & SLA Targets
 # ---------------------------------------------------------------------------
