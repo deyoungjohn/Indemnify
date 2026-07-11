@@ -24,6 +24,9 @@ except ImportError:
 
 # Environment variables mapping will be loaded dynamically at runtime in class initialization
 
+# ERC-4337 UserOperationEvent topic: keccak256("UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)")
+USER_OP_EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f"
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -189,7 +192,7 @@ class OracleListener:
                         startTimestamp = event['args']['startTimestamp']
                         timeoutDuration = event['args']['timeoutDuration']
                         
-                        # Retrieve original transaction to get the creation nonce
+                        # Retrieve original transaction to get the creation nonce and hash
                         tx = await self.w3.eth.get_transaction(event['transactionHash'])
                         creation_nonce = tx['nonce']
                         
@@ -198,7 +201,8 @@ class OracleListener:
                             "startTimestamp": startTimestamp,
                             "timeoutDuration": timeoutDuration,
                             "creation_nonce": creation_nonce,
-                            "creation_block": event['blockNumber']
+                            "creation_block": event['blockNumber'],
+                            "creation_tx_hash": event['transactionHash'].hex()
                         }
                         logger.info(f"Reconstructed active policy {policy_id} for client {client} (Creation Nonce: {creation_nonce})")
                 except Exception as e:
@@ -211,12 +215,31 @@ class OracleListener:
                 for b_num in range(min_creation_block, current_block + 1):
                     try:
                         block = await self.w3.eth.get_block(b_num, full_transactions=True)
+                        
+                        # Fetch ERC-4337 UserOperationEvents for this block
+                        aa_logs = await self.w3.eth.get_logs({
+                            'fromBlock': b_num,
+                            'toBlock': b_num,
+                            'topics': [USER_OP_EVENT_TOPIC]
+                        })
+                        
+                        aa_senders_by_tx = {}
+                        for log in aa_logs:
+                            if len(log['topics']) > 1:
+                                sender = AsyncWeb3.to_checksum_address("0x" + log['topics'][1].hex()[-40:])
+                                tx_hex = log['transactionHash'].hex()
+                                if tx_hex not in aa_senders_by_tx:
+                                    aa_senders_by_tx[tx_hex] = set()
+                                aa_senders_by_tx[tx_hex].add(sender)
+                        
                         for tx in block['transactions']:
                             tx_from = AsyncWeb3.to_checksum_address(tx['from'])
-                            tx_nonce = tx['nonce']
+                            tx_hash_hex = tx['hash'].hex()
+                            aa_senders = aa_senders_by_tx.get(tx_hash_hex, set())
                             
                             for policy_id, policy in list(self.active_policies.items()):
-                                if tx_from.lower() == policy['client'].lower() and tx_nonce > policy['creation_nonce']:
+                                is_client_tx = (tx_from.lower() == policy['client'].lower()) or (policy['client'] in aa_senders)
+                                if is_client_tx and tx_hash_hex != policy['creation_tx_hash']:
                                     logger.info(f"Historical client tx detected for policy {policy_id} in block {b_num}. Settling...")
                                     try:
                                         receipt = await self.w3.eth.get_transaction_receipt(tx['hash'])
@@ -322,7 +345,7 @@ class OracleListener:
                 startTimestamp = event['args']['startTimestamp']
                 timeoutDuration = event['args']['timeoutDuration']
                 
-                # Query creation transaction for nonce
+                # Query creation transaction for nonce and hash
                 tx = await self.w3.eth.get_transaction(event['transactionHash'])
                 creation_nonce = tx['nonce']
                 
@@ -331,7 +354,8 @@ class OracleListener:
                     "startTimestamp": startTimestamp,
                     "timeoutDuration": timeoutDuration,
                     "creation_nonce": creation_nonce,
-                    "creation_block": block_num
+                    "creation_block": block_num,
+                    "creation_tx_hash": event['transactionHash'].hex()
                 }
                 logger.info(f"New policy detected: ID {policy_id} | Client {client} | Creation Nonce {creation_nonce}")
         except Exception as e:
@@ -346,6 +370,23 @@ class OracleListener:
         try:
             block = await self.w3.eth.get_block(block_num, full_transactions=True)
             block_timestamp = block['timestamp']
+            
+            # Fetch ERC-4337 UserOperationEvents for this block
+            aa_logs = await self.w3.eth.get_logs({
+                'fromBlock': block_num,
+                'toBlock': block_num,
+                'topics': [USER_OP_EVENT_TOPIC]
+            })
+            
+            aa_senders_by_tx = {}
+            for log in aa_logs:
+                if len(log['topics']) > 1:
+                    sender = AsyncWeb3.to_checksum_address("0x" + log['topics'][1].hex()[-40:])
+                    tx_hex = log['transactionHash'].hex()
+                    if tx_hex not in aa_senders_by_tx:
+                        aa_senders_by_tx[tx_hex] = set()
+                    aa_senders_by_tx[tx_hex].add(sender)
+                    
         except Exception as e:
             logger.error(f"Failed to fetch block details for block {block_num}: {e}")
             raise e
@@ -353,14 +394,16 @@ class OracleListener:
         # Scan block transactions for client next outbound transactions
         for tx in block['transactions']:
             tx_from = AsyncWeb3.to_checksum_address(tx['from'])
-            tx_nonce = tx['nonce']
             tx_hash = tx['hash']
+            tx_hash_hex = tx_hash.hex()
+            aa_senders = aa_senders_by_tx.get(tx_hash_hex, set())
             
             # Use copy of dict to allow removal during iteration
             for policy_id, policy in list(self.active_policies.items()):
-                if tx_from.lower() == policy['client'].lower() and tx_nonce > policy['creation_nonce']:
+                is_client_tx = (tx_from.lower() == policy['client'].lower()) or (policy['client'] in aa_senders)
+                if is_client_tx and tx_hash_hex != policy['creation_tx_hash']:
                     # We found the client's next outbound transaction!
-                    logger.info(f"Detected client {tx_from} target transaction in block {block_num}. Hash: {tx_hash.hex()}. Nonce: {tx_nonce}")
+                    logger.info(f"Detected client {policy['client']} target transaction in block {block_num}. Hash: {tx_hash_hex}.")
                     
                     try:
                         receipt = await self.w3.eth.get_transaction_receipt(tx_hash)
@@ -383,7 +426,8 @@ class OracleListener:
         for policy_id, policy in list(self.active_policies.items()):
             elapsed = block_timestamp - policy['startTimestamp']
             if elapsed >= policy['timeoutDuration']:
-                logger.info(f"Policy {policy_id} reached timeout window ({elapsed}s >= {policy['timeoutDuration']}s) without target transaction. Dropping from queue.")
+                logger.info(f"Policy {policy_id} reached timeout window ({elapsed}s >= {policy['timeoutDuration']}s) without target transaction. Settling with Tier 0.")
+                asyncio.create_task(self.settle_policy(policy_id, 0))
                 self.active_policies.pop(policy_id, None)
 
     async def start(self):
