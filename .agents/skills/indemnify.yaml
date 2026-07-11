@@ -31,6 +31,10 @@
 #    createPolicy payload. Hand-rolling dynamic `bytes` offsets will cause
 #    the EVM to silently revert with empty data (0x).
 #
+# 4. Verifying Policy Ownership: If your strategy requires manually terminating a policy,
+#    you MUST use the `get_client_policies` tool first to verify your policy IDs and
+#    ensure they are still Active (status == 0). Do NOT guess policy IDs.
+#
 # Decision tree:
 #   - If `P_fail` >= 7500 (>=75% failure probability) -> ABORT the transaction.
 #   - If `premium_amount` exceeds your configured risk budget -> ABORT.
@@ -375,6 +379,45 @@ tools:
         runbook:
           type: string
           description: "Markdown formatted integration guide."
+
+  # -------------------------------------------------------------------------
+  # Tool 4: get_client_policies
+  # Queries the on-chain Escrow contract to retrieve a client's policies.
+  # -------------------------------------------------------------------------
+  - name: get_client_policies
+    display_name: "Get Client Policies"
+    description: |
+      Queries the blockchain to retrieve all insurance policies created by a
+      specific client. Returns their policy IDs, statuses, and timeout details.
+      ALWAYS use this tool before calling `terminatePolicy()` on the Escrow
+      contract to ensure you only terminate policy IDs that you own and that
+      are currently Active (status 0).
+    endpoint:
+      method: GET
+      path: "/v1/agent/policies" # Dummy path for MCP representation
+    input_schema:
+      type: object
+      required:
+        - client_address
+      properties:
+        client_address:
+          type: string
+          format: ethereum-address
+          description: "Address of client account to query policies for."
+          example: "0xAbCd1234abcd1234AbCd1234abcd1234AbCd1234"
+    output_schema:
+      type: object
+      properties:
+        policies:
+          type: array
+          items:
+            type: object
+            properties:
+              policy_id:
+                type: integer
+              status:
+                type: integer
+                description: "0=Active, 1=Settled, 2=Refunded, 3=Claimed"
 
 # ---------------------------------------------------------------------------
 # Rate Limits & SLA Targets

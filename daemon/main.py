@@ -24,6 +24,32 @@ logger = logging.getLogger("indemnify.daemon")
 risk_engine = RiskEngine()
 signer = CryptographicSigner()
 
+ESCROW_ABI = [
+    {
+        "inputs": [],
+        "name": "policyCount",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "name": "policies",
+        "outputs": [
+            {"internalType": "address", "name": "clientAddress", "type": "address"},
+            {"internalType": "address", "name": "asset", "type": "address"},
+            {"internalType": "uint256", "name": "coverageAmount", "type": "uint256"},
+            {"internalType": "uint256", "name": "premiumPaid", "type": "uint256"},
+            {"internalType": "uint256", "name": "startTimestamp", "type": "uint256"},
+            {"internalType": "uint256", "name": "timeoutDuration", "type": "uint256"},
+            {"internalType": "uint8", "name": "riskBracketTier", "type": "uint8"},
+            {"internalType": "enum ParametricEscrow.PolicyStatus", "name": "status", "type": "uint8"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
+
 # ---------------------------------------------------------------------------
 # Pydantic Schemas for FastAPI REST API
 # ---------------------------------------------------------------------------
@@ -244,6 +270,17 @@ try:
                     "properties": {},
                     "required": []
                 }
+            ),
+            Tool(
+                name="get_client_policies",
+                description="Queries the blockchain to retrieve all insurance policies created by a specific client, including their policy ID, status, and timeout details. ALWAYS use this to find which policy IDs to terminate.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "client_address": {"type": "string", "description": "Address of client account."}
+                    },
+                    "required": ["client_address"]
+                }
             )
         ]
 
@@ -319,6 +356,41 @@ This runbook equips agents with the exact workflow needed to successfully intera
 6. **`msg.sender` Match:** Request the quote using your **AA Wallet address** as the `client_address`, otherwise `ECDSA.recover` will revert with `InvalidSignature`.
 """
                 return [TextContent(type="text", text=runbook)]
+
+            elif name == "get_client_policies":
+                client_address = arguments["client_address"].lower()
+                contract = risk_engine.w3.eth.contract(
+                    address=risk_engine.w3.to_checksum_address(settings.escrow_address),
+                    abi=ESCROW_ABI
+                )
+                
+                try:
+                    count = await contract.functions.policyCount().call()
+                except Exception as e:
+                    return [TextContent(type="text", text=json.dumps({"error": f"Failed to fetch policyCount: {e}"}, indent=2))]
+                    
+                policies_found = []
+                # Loop backwards to get recent policies first. Cap at checking last 500 to avoid long hangs.
+                min_id = max(1, count - 500)
+                for i in range(count, min_id - 1, -1):
+                    try:
+                        policy = await contract.functions.policies(i).call()
+                        if policy[0].lower() == client_address:
+                            policies_found.append({
+                                "policy_id": i,
+                                "asset": policy[1],
+                                "coverage_amount": policy[2],
+                                "premium_paid": policy[3],
+                                "start_timestamp": policy[4],
+                                "timeout_duration": policy[5],
+                                "risk_bracket_tier": policy[6],
+                                "status": policy[7] # 0=Active, 1=Settled, 2=Refunded, 3=Claimed
+                            })
+                    except Exception as e:
+                        logger.error(f"Error fetching policy {i}: {e}")
+                        continue
+                        
+                return [TextContent(type="text", text=json.dumps({"policies": policies_found}, indent=2))]
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
