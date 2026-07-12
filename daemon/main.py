@@ -200,7 +200,7 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
 
         # 6. Pre-encode Intent-Based Calldata
         contract = risk_engine.w3.eth.contract(address=risk_engine.w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
-        tx_calldata = contract.encodeABI("createPolicy", args=[
+        tx_calldata = contract.encode_abi("createPolicy", args=[
             risk_engine.w3.to_checksum_address(asset_addr),
             payload.coverage_requested,
             premium_amount,
@@ -372,7 +372,7 @@ try:
                 )
 
                 contract = risk_engine.w3.eth.contract(address=risk_engine.w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
-                tx_calldata = contract.encodeABI("createPolicy", args=[
+                tx_calldata = contract.encode_abi("createPolicy", args=[
                     risk_engine.w3.to_checksum_address(asset_addr),
                     req.coverage_requested,
                     premium_amount,
