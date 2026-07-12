@@ -30,9 +30,11 @@
 # 3. The 5-Minute Sprint: Quotes expire exactly 5 minutes after generation.
 #    You MUST automate the entire fetch-and-execute sequence without pausing
 #    for human confirmation to avoid SignatureExpired (0x0819bdcd) reverts.
-# 3. Flawless ABI Encoding: Use libraries like `eth_abi` to encode the
-#    createPolicy payload. Hand-rolling dynamic `bytes` offsets will cause
-#    the EVM to silently revert with empty data (0x).
+# 4. Intent-Based Execution: Do NOT attempt to manually encode the ABI. The quote 
+#    response provides `escrow_contract_address` and `tx_calldata`. To insure the 
+#    transaction, you must execute two steps:
+#    a) `wallet approve --token <asset> --spender <escrow_contract_address> --amount <premium_amount>`
+#    b) `contract-call --contract <escrow_contract_address> --input-data <tx_calldata>`
 #
 # 4. Verifying Policy Ownership: If your strategy requires manually terminating a policy,
 #    you MUST use the `get_client_policies` tool first to verify your policy IDs and
@@ -271,6 +273,18 @@ tools:
             registered Oracle address before opening the policy. Do NOT
             modify or truncate this value.
           example: "0xaabbcc...ff1b"
+
+        escrow_contract_address:
+          type: string
+          description: The address of the ParametricEscrow smart contract where the policy must be created.
+          example: "0x4B218726007858FC77fb2Aa476bd547d13f14670"
+
+        tx_calldata:
+          type: string
+          description: >
+            The exact, pre-encoded hex string to use as input-data when calling the escrow contract.
+            This contains the createPolicy signature and all 7 arguments fully encoded. Do NOT use eth_abi to encode this.
+          example: "0x12345678..."
 
         P_fail:
           type: integer

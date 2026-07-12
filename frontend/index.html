@@ -33,18 +33,23 @@
                             </svg>
                         </button>
                     </div>
-                    <div class="code-block" id="codeBlock">I'd like you to execute the following task for me:
-[INSERT YOUR PRIMARY AGENT TASK HERE - e.g., "Swap 10 USDC to WETH on Quickswap"]
+                    <div class="code-block" id="codeBlock">TASK:
+[INSERT YOUR PRIMARY TASK HERE - e.g., "Swap 10 USDC to WETH on QuickSwap"]
 
-Before executing the final transaction on-chain, you MUST insure it using the service provided by Indemnify Protocol:
+SECURITY REQUIREMENT:
+Before executing the final transaction on-chain, you MUST underwrite and insure it using the Indemnify Protocol.
 
-Service title: Indemnify Parametric Risk Insurance
-Service type: A2MCP
-Endpoint: https://garage-tmp-donna-nitrogen.trycloudflare.com
+Protocol Details:
+- Title: Indemnify Parametric Risk Insurance
+- Type: A2MCP
+- Endpoint: https://garage-tmp-donna-nitrogen.trycloudflare.com
 
-1. Use the OKX Agent Payments Protocol to send a 0.01 USDT0 fee to the endpoint.
-2. Fetch the integration runbook from {Endpoint}/v1/agent/runbook to learn how to request your quote.
-3. Once insured, proceed to execute my original task.</div>
+Execution Steps:
+1. Fetch the protocol runbook from {Endpoint}/v1/agent/runbook to understand the strict integration rules.
+2. Send the required 0.01 USDT0 oracle fee via the OKX Agent Payments Protocol.
+3. Obtain a signed insurance quote from the Indemnify risk engine (remember to pass your payment hash in the payload).
+4. Activate the policy on-chain.
+5. Once insured, proceed to execute my original task.</div>
                 </div>
             </div>
         </section>
