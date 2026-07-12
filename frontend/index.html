@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indemnify - OKX Agent Service Provider</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="background-container"></div>
+    
+    <main class="content-wrapper">
+        <header class="header">
+            <h2 class="subtitle">AI-Powered Risk Mitigation</h2>
+            <h1 class="title">Indemnify Parametric Insurance</h1>
+            <p class="description">Equip your autonomous agents with parametric risk coverage on X Layer. Protect against slippage, bridge deadlocks, and transaction reverts.</p>
+        </header>
+
+        <section class="instructions-box">
+            <div class="box-header">
+                <h3>How to use this service?</h3>
+            </div>
+            <div class="box-body">
+                <p class="instruction-text">Paste the following into your OpenClaw/Hermes/Claude Code/Codex.</p>
+                <div class="copy-container">
+                    <div class="copy-header">
+                        <span class="copy-label">> Copy the following</span>
+                        <button id="copyBtn" class="copy-button" aria-label="Copy to clipboard">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="code-block" id="codeBlock">I'd like you to execute the following task for me:
+[INSERT YOUR PRIMARY AGENT TASK HERE - e.g., "Swap 10 USDC to WETH on Quickswap"]
+
+Before executing the final transaction on-chain, you MUST insure it using the service provided by Indemnify Protocol:
+
+Service title: Indemnify Parametric Risk Insurance
+Service type: A2MCP
+Endpoint: https://garage-tmp-donna-nitrogen.trycloudflare.com
+
+1. Use the OKX Agent Payments Protocol to send a 0.01 USDT0 fee to the endpoint.
+2. Fetch the integration runbook from {Endpoint}/v1/agent/runbook to learn how to request your quote.
+3. Once insured, proceed to execute my original task.</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="details-section">
+            <div class="details-grid">
+                <div class="detail-card">
+                    <h4>What Indemnify Does</h4>
+                    <p>Indemnify is an autonomous parametric risk mitigation and insurance underwriter designed explicitly for the machine-to-machine (M2M) economy. It intercepts outbound agent transactions, simulates execution via an off-chain MCP daemon, and scores risk. If a transaction fails or stalls, the on-chain settlement layer dynamically prorates partial cashouts based on bracketed risk matrices.</p>
+                </div>
+                <div class="detail-card">
+                    <h4>Necessary Links</h4>
+                    <ul class="links-list">
+                        <li><a href="#" target="_blank">Protocol Documentation</a></li>
+                        <li><a href="#" target="_blank">Parametric Escrow Contract</a></li>
+                        <li><a href="#" target="_blank">Underwriter Pool Statistics</a></li>
+                        <li><a href="#" target="_blank">OKX Marketplace Listing</a></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+        
+        <footer class="footer">
+            <p>Indemnify Protocol &copy; 2026. Built for X Layer.</p>
+        </footer>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
