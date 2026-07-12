@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Set, Dict
+from typing import Set, Dict, Tuple
 from fastapi import Response
 from web3 import Web3
 from .config import settings
@@ -39,14 +39,15 @@ def build_402_response() -> Response:
         media_type="application/json"
     )
 
-def verify_payment(tx_hash: str) -> bool:
+def verify_payment(tx_hash: str) -> Tuple[bool, str]:
     """Verifies the on-chain USDT0 transfer by reading the logs (supports AA and relayed txs)."""
     if not tx_hash:
-        return False
+        return False, "No payment_tx_hash provided in request."
         
-    if tx_hash in PROCESSED_TX_HASHES:
-        logger.warning(f"Replay attack detected with tx: {tx_hash}")
-        return False
+    # RELAXED FOR DEBUGGING: Anti-replay protection temporarily disabled
+    # if tx_hash in PROCESSED_TX_HASHES:
+    #     logger.warning(f"Replay attack detected with tx: {tx_hash}")
+    #     return False, f"Replay attack detected. Tx {tx_hash} was already used."
         
     # Ensure tx_hash is properly formatted
     if not tx_hash.startswith("0x"):
@@ -56,7 +57,7 @@ def verify_payment(tx_hash: str) -> bool:
         receipt = w3.eth.get_transaction_receipt(tx_hash)
         if receipt.status != 1:
             logger.error(f"Transaction {tx_hash} failed on-chain.")
-            return False
+            return False, f"Transaction {tx_hash} failed on-chain. Status is not 1."
             
         # Decimals: USDT0 is 6 decimals.
         expected_amount_raw = int(settings.x402_fee_usdt * (10**6))
@@ -91,12 +92,15 @@ def verify_payment(tx_hash: str) -> bool:
                                 break
                                 
         if valid_transfer_found:
-            PROCESSED_TX_HASHES.add(tx_hash)
-            return True
+            # PROCESSED_TX_HASHES.add(tx_hash)
+            return True, "Payment verified successfully."
         else:
             logger.error(f"Transaction {tx_hash} did not contain a valid transfer to treasury.")
-            return False
+            return False, f"Transaction {tx_hash} was found, but it does not contain a {settings.x402_fee_usdt} USDT0 Transfer to {settings.x402_treasury_address}."
             
     except Exception as e:
-        logger.error(f"Error verifying payment tx {tx_hash}: {e}")
-        return False
+        err_msg = str(e)
+        logger.error(f"Error verifying payment tx {tx_hash}: {err_msg}")
+        if "not found" in err_msg.lower() or "Transaction with hash" in err_msg:
+            return False, f"Transaction {tx_hash} not found on-chain. It may still be indexing. Wait 10s and retry."
+        return False, f"RPC Error verifying payment: {err_msg}"

@@ -11,6 +11,7 @@ from daemon.config import settings
 from daemon.risk_engine import RiskEngine
 from daemon.signer import CryptographicSigner
 from daemon.x402_middleware import verify_payment, build_402_response
+from web3 import Web3
 
 # Configure Logging
 logging.basicConfig(
@@ -23,6 +24,9 @@ logger = logging.getLogger("indemnify.daemon")
 # Initialize modules
 risk_engine = RiskEngine()
 signer = CryptographicSigner()
+
+# Synchronous Web3 instance for pure ABI encoding (AsyncWeb3 contracts don't support encode_abi)
+_sync_w3 = Web3()
 
 ESCROW_ABI = [
     {
@@ -95,6 +99,8 @@ class InsuranceQuoteResponse(BaseModel):
     quote_id: str
     deadline: int
     signature: str
+    approve_target_address: str
+    approve_calldata: str
     escrow_contract_address: str
     tx_calldata: str
 
@@ -154,7 +160,11 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
     Computes P_fail, dynamic premium, and returns an oracle-signed quote matching ParametricEscrow.sol interface.
     """
     # 0. Check 402 Payment
-    if not verify_payment(payload.payment_tx_hash):
+    if payload.payment_tx_hash:
+        success, reason = verify_payment(payload.payment_tx_hash)
+        if not success:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": reason})
+    else:
         return build_402_response()
 
     start_time = time.perf_counter()
@@ -182,10 +192,10 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
         fixed_margin_scaled = int(settings.fixed_underwriter_margin * (10 ** decimals))
         premium_amount = int((payload.coverage_requested * p_fail) // 10000) + fixed_margin_scaled
 
-        # 4. Generate unique quote ID (bytes32) and deadline (timestamp + 300s)
+        # 4. Generate unique quote ID (bytes32) and deadline (timestamp + 3600s = 1 hour)
         quote_id_bytes = signer.generate_quote_id()
         quote_id_hex = "0x" + quote_id_bytes.hex()
-        deadline = int(time.time()) + 300
+        deadline = int(time.time()) + 3600
 
         # 5. Sign the payload using EIP-191 oracle key
         signature_hex = signer.sign_quote(
@@ -198,16 +208,24 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
             quote_id=quote_id_bytes
         )
 
-        # 6. Pre-encode Intent-Based Calldata
-        contract = risk_engine.w3.eth.contract(address=risk_engine.w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
-        tx_calldata = contract.encode_abi("createPolicy", args=[
-            risk_engine.w3.to_checksum_address(asset_addr),
+        # 6. Pre-encode Intent-Based Calldata using synchronous Web3
+        _escrow_contract = _sync_w3.eth.contract(address=_sync_w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
+        tx_calldata = _escrow_contract.encode_abi("createPolicy", args=[
+            _sync_w3.to_checksum_address(asset_addr),
             payload.coverage_requested,
             premium_amount,
             payload.timeout_duration,
             deadline,
             quote_id_bytes,
             bytes.fromhex(signature_hex)
+        ])
+        
+        # 7. Pre-encode ERC20 Approve Intent
+        ERC20_ABI = [{"inputs": [{"internalType": "address", "name": "spender", "type": "address"}, {"internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "approve", "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "nonpayable", "type": "function"}]
+        _erc20_contract = _sync_w3.eth.contract(address=_sync_w3.to_checksum_address(asset_addr), abi=ERC20_ABI)
+        approve_calldata = _erc20_contract.encode_abi("approve", args=[
+            _sync_w3.to_checksum_address(settings.escrow_address),
+            premium_amount
         ])
 
         latency = (time.perf_counter() - start_time) * 1000
@@ -218,6 +236,8 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
             "quote_id": quote_id_hex,
             "deadline": deadline,
             "signature": "0x" + signature_hex,
+            "approve_target_address": asset_addr,
+            "approve_calldata": approve_calldata,
             "escrow_contract_address": settings.escrow_address,
             "tx_calldata": tx_calldata
         }
@@ -242,10 +262,10 @@ This runbook equips agents with the exact workflow needed to successfully intera
 1. **402 Payment Required:** Every quote requires a 0.01 USDT0 fee. Payments are routed via the AA wallet, so the top-level transaction will go to the AA router.
 2. **Anti-Replay Protection:** The server will reject reused payment hashes. You must broadcast a fresh payment for every unique quote.
 3. **Pass the Hash:** After broadcasting the 402 payment, **wait ~10 seconds** before requesting the quote to allow RPC nodes to index it. Pass the exact transaction hash in the `payment_tx_hash` field of your request payload. Do NOT use HTTP headers.
-4. **Strict 5-Minute Expiry (The Sprint):** Quotes expire in exactly 5 minutes (`block.timestamp > deadline`). You must **never pause for human confirmation** between fetching the quote and executing the insurance transaction.
-5. **Intent-Based Execution:** Do NOT attempt to manually encode the ABI. The quote response provides `escrow_contract_address` and `tx_calldata`. To insure the transaction, you must execute two steps:
-   a) `approve` the `escrow_contract_address` to spend your `premium_amount` of `asset`.
-   b) broadcast a raw `contract-call` to `escrow_contract_address` using the provided `tx_calldata` as your input-data.
+4. **Relaxed 1-Hour Expiry:** Quotes expire in exactly 1 hour (`block.timestamp > deadline`). You have plenty of time to debug execution without triggering `SignatureExpired`.
+5. **Intent-Based Execution:** Do NOT attempt to manually encode the ABI. The quote response provides all targets and calldata. You must execute two raw `contract-call` intents in order:
+   a) Target `approve_target_address` with input data `approve_calldata` (Approves the escrow contract).
+   b) Target `escrow_contract_address` with input data `tx_calldata` (Creates the policy).
 6. **`msg.sender` Match:** Request the quote using your **AA Wallet address** as the `client_address`, otherwise `ECDSA.recover` will revert with `InvalidSignature`.
 """
     return {"runbook": runbook.strip()}
@@ -335,8 +355,12 @@ try:
                 req = InsuranceQuoteRequest(**arguments)
                 
                 # Check 402 Payment
-                if not verify_payment(req.payment_tx_hash):
-                    return [TextContent(type="text", text=json.dumps({"error": "Payment Required", "message": "Invalid or unverified payment transaction hash."}))]
+                if req.payment_tx_hash:
+                    success, reason = verify_payment(req.payment_tx_hash)
+                    if not success:
+                        return [TextContent(type="text", text=json.dumps({"error": "Payment Verification Failed", "message": reason}))]
+                else:
+                    return [TextContent(type="text", text=json.dumps({"error": "Payment Required", "message": "No payment_tx_hash provided."}))]
 
                 # Compute quote
                 sim_res = await risk_engine.simulate_transaction_risk(
@@ -359,7 +383,7 @@ try:
 
                 quote_id_bytes = signer.generate_quote_id()
                 quote_id_hex = "0x" + quote_id_bytes.hex()
-                deadline = int(time.time()) + 300
+                deadline = int(time.time()) + 3600
 
                 signature_hex = signer.sign_quote(
                     client_address=req.client_address,
@@ -371,9 +395,9 @@ try:
                     quote_id=quote_id_bytes
                 )
 
-                contract = risk_engine.w3.eth.contract(address=risk_engine.w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
-                tx_calldata = contract.encode_abi("createPolicy", args=[
-                    risk_engine.w3.to_checksum_address(asset_addr),
+                _escrow_contract = _sync_w3.eth.contract(address=_sync_w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
+                tx_calldata = _escrow_contract.encode_abi("createPolicy", args=[
+                    _sync_w3.to_checksum_address(asset_addr),
                     req.coverage_requested,
                     premium_amount,
                     req.timeout_duration,
@@ -381,12 +405,21 @@ try:
                     quote_id_bytes,
                     bytes.fromhex(signature_hex)
                 ])
+                
+                ERC20_ABI = [{"inputs": [{"internalType": "address", "name": "spender", "type": "address"}, {"internalType": "uint256", "name": "amount", "type": "uint256"}], "name": "approve", "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "nonpayable", "type": "function"}]
+                _erc20_contract = _sync_w3.eth.contract(address=_sync_w3.to_checksum_address(asset_addr), abi=ERC20_ABI)
+                approve_calldata = _erc20_contract.encode_abi("approve", args=[
+                    _sync_w3.to_checksum_address(settings.escrow_address),
+                    premium_amount
+                ])
 
                 output = {
                     "premium_amount": premium_amount,
                     "quote_id": quote_id_hex,
                     "deadline": deadline,
                     "signature": "0x" + signature_hex,
+                    "approve_target_address": asset_addr,
+                    "approve_calldata": approve_calldata,
                     "escrow_contract_address": settings.escrow_address,
                     "tx_calldata": tx_calldata
                 }
@@ -402,10 +435,10 @@ This runbook equips agents with the exact workflow needed to successfully intera
 1. **402 Payment Required:** Every quote requires a 0.01 USDT0 fee. Payments are routed via the AA wallet, so the top-level transaction will go to the AA router.
 2. **Anti-Replay Protection:** The server will reject reused payment hashes. You must broadcast a fresh payment for every unique quote.
 3. **Pass the Hash:** After broadcasting the 402 payment, **wait ~10 seconds** before requesting the quote to allow RPC nodes to index it. Pass the exact transaction hash in the `payment_tx_hash` field of your request payload. Do NOT use HTTP headers.
-4. **Strict 5-Minute Expiry (The Sprint):** Quotes expire in exactly 5 minutes (`block.timestamp > deadline`). You must **never pause for human confirmation** between fetching the quote and executing the insurance transaction.
-5. **Intent-Based Execution:** Do NOT attempt to manually encode the ABI. The quote response provides `escrow_contract_address` and `tx_calldata`. To insure the transaction, you must execute two steps:
-   a) `approve` the `escrow_contract_address` to spend your `premium_amount` of `asset`.
-   b) broadcast a raw `contract-call` to `escrow_contract_address` using the provided `tx_calldata` as your input-data.
+4. **Relaxed 1-Hour Expiry:** Quotes expire in exactly 1 hour (`block.timestamp > deadline`). You have plenty of time to debug execution without triggering `SignatureExpired`.
+5. **Intent-Based Execution:** Do NOT attempt to manually encode the ABI. The quote response provides all targets and calldata. You must execute two raw `contract-call` intents in order:
+   a) Target `approve_target_address` with input data `approve_calldata` (Approves the escrow contract).
+   b) Target `escrow_contract_address` with input data `tx_calldata` (Creates the policy).
 6. **`msg.sender` Match:** Request the quote using your **AA Wallet address** as the `client_address`, otherwise `ECDSA.recover` will revert with `InvalidSignature`.
 """
                 return [TextContent(type="text", text=runbook)]

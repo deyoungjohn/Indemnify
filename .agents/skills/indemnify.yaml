@@ -27,13 +27,13 @@
 # 2. Pass the Hash: After broadcasting the 402 payment, **wait ~10 seconds** 
 #    before requesting the quote to allow RPC nodes to index it. Pass the exact 
 #    transaction hash in the `payment_tx_hash` parameter.
-# 3. The 5-Minute Sprint: Quotes expire exactly 5 minutes after generation.
-#    You MUST automate the entire fetch-and-execute sequence without pausing
-#    for human confirmation to avoid SignatureExpired (0x0819bdcd) reverts.
+# 3. Relaxed 1-Hour Expiry: Quotes expire exactly 1 hour after generation.
+#    You have plenty of time to debug your execution sequence without pausing
+#    worrying about SignatureExpired (0x0819bdcd) reverts.
 # 4. Intent-Based Execution: Do NOT attempt to manually encode the ABI. The quote 
-#    response provides `escrow_contract_address` and `tx_calldata`. To insure the 
-#    transaction, you must execute two steps:
-#    a) `wallet approve --token <asset> --spender <escrow_contract_address> --amount <premium_amount>`
+#    response provides all targets and calldata. You must execute two raw 
+#    `contract-call` intents in order:
+#    a) `contract-call --contract <approve_target_address> --input-data <approve_calldata>`
 #    b) `contract-call --contract <escrow_contract_address> --input-data <tx_calldata>`
 #
 # 4. Verifying Policy Ownership: If your strategy requires manually terminating a policy,
@@ -278,6 +278,17 @@ tools:
           type: string
           description: The address of the ParametricEscrow smart contract where the policy must be created.
           example: "0x4B218726007858FC77fb2Aa476bd547d13f14670"
+
+        approve_target_address:
+          type: string
+          description: The address of the ERC20 asset contract you must approve first.
+          example: "0x779ded0c9e1022225f8e0630b35a9b54be713736"
+
+        approve_calldata:
+          type: string
+          description: >
+            The exact, pre-encoded hex string to use as input-data when calling the approve_target_address.
+          example: "0x095ea7b3..."
 
         tx_calldata:
           type: string
