@@ -460,6 +460,9 @@ tools:
               terminate_calldata:
                 type: string
                 description: "Pre-encoded calldata to safely terminate this specific policy. Use this directly in a contract-call."
+              escrow_contract_address:
+                type: string
+                description: "The contract address you must broadcast the terminate_calldata to."
 
 # ---------------------------------------------------------------------------
 # Rate Limits & SLA Targets

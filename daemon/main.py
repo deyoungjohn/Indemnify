@@ -284,7 +284,8 @@ async def fetch_client_policies_from_chain(client_address: str):
                     "timeout_duration": policy[5],
                     "risk_bracket_tier": policy[6],
                     "status": policy[7], # 0=Active, 1=Settled, 2=Refunded, 3=Claimed
-                    "terminate_calldata": terminate_calldata
+                    "terminate_calldata": terminate_calldata,
+                    "escrow_contract_address": settings.escrow_address
                 })
         except Exception as e:
             logger.error(f"Error fetching policy {i}: {e}")
