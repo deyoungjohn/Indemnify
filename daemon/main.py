@@ -307,8 +307,8 @@ async def api_get_client_policies(client_address: str):
     """
     result = await fetch_client_policies_from_chain(client_address)
     if "error" in result:
-        return JSONResponse(status_code=500, content=result)
-    return result
+        return JSONResponse(status_code=500, content=result, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return JSONResponse(status_code=200, content=result, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/v1/agent/runbook")
 async def api_get_runbook():
