@@ -214,11 +214,7 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
 
         # 2. Get asset token decimals dynamically
         asset_addr = payload.asset or settings.escrow_address  # Fallback to escrow address if not provided
-        # If simulation failed because RPC is unreachable or timed out, bypass decimals fetch to avoid extra timeout
-        if any(v in sim_result.get("detected_vectors", []) for v in ["RPC_CODE_FETCH_FAILED", "RPC_LATENCY_TIMEOUT_EXCEEDED"]):
-            decimals = 18
-        else:
-            decimals = await risk_engine.get_token_decimals(asset_addr)
+        decimals = await risk_engine.get_token_decimals(asset_addr)
 
         # 3. Apply mathematical pricing formula
         # Premium = (CoverageRequested * P_fail) / 10000 + FixedUnderwriterMargin
@@ -462,11 +458,7 @@ try:
                 )
                 p_fail = sim_res["P_fail"]
                 asset_addr = req.asset or settings.escrow_address
-                # If simulation failed because RPC is unreachable or timed out, bypass decimals fetch to avoid extra timeout
-                if any(v in sim_res.get("detected_vectors", []) for v in ["RPC_CODE_FETCH_FAILED", "RPC_LATENCY_TIMEOUT_EXCEEDED"]):
-                    decimals = 18
-                else:
-                    decimals = await risk_engine.get_token_decimals(asset_addr)
+                decimals = await risk_engine.get_token_decimals(asset_addr)
 
                 fixed_margin_scaled = int(settings.fixed_underwriter_margin * (10 ** decimals))
                 premium_amount = int((req.coverage_requested * p_fail) // 10000) + fixed_margin_scaled
