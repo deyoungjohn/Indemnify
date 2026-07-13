@@ -36,9 +36,10 @@
 #    a) `contract-call --contract <approve_target_address> --input-data <approve_calldata>`
 #    b) `contract-call --contract <escrow_contract_address> --input-data <tx_calldata>`
 #
-# 4. Verifying Policy Ownership: If your strategy requires manually terminating a policy,
-#    you MUST use the `get_client_policies` tool first to verify your policy IDs and
-#    ensure they are still Active (status == 0). Do NOT guess policy IDs.
+# 4. Intent-Based Termination: If your strategy requires manually terminating a policy,
+#    you MUST use the `get_client_policies` tool first. This tool returns your active
+#    policies along with `terminate_calldata`. To terminate, execute a raw `contract-call`:
+#    `contract-call --contract <escrow_contract_address> --input-data <terminate_calldata>`
 #
 # Decision tree:
 #   - If `P_fail` >= 7500 (>=75% failure probability) -> ABORT the transaction.
@@ -456,6 +457,9 @@ tools:
               status:
                 type: integer
                 description: "0=Active, 1=Settled, 2=Refunded, 3=Claimed"
+              terminate_calldata:
+                type: string
+                description: "Pre-encoded calldata to safely terminate this specific policy. Use this directly in a contract-call."
 
 # ---------------------------------------------------------------------------
 # Rate Limits & SLA Targets

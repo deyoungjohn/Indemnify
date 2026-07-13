@@ -248,6 +248,60 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
             detail=f"Quote generation failed: {str(e)}"
         )
 
+async def fetch_client_policies_from_chain(client_address: str):
+    """Helper function to fetch all policies for a given client from the Escrow contract."""
+    client_address = client_address.lower()
+    contract = risk_engine.w3.eth.contract(
+        address=risk_engine.w3.to_checksum_address(settings.escrow_address),
+        abi=ESCROW_ABI
+    )
+    
+    try:
+        count = await contract.functions.policyCount().call()
+    except Exception as e:
+        return {"error": f"Failed to fetch policyCount: {e}"}
+        
+    policies_found = []
+    # Loop backwards to get recent policies first. Cap at checking last 500 to avoid long hangs.
+    min_id = max(1, count - 500)
+    for i in range(count, min_id - 1, -1):
+        try:
+            policy = await contract.functions.policies(i).call()
+            if policy[0].lower() == client_address:
+                # Pre-encode intent-based termination calldata for the agent
+                _sync_escrow = _sync_w3.eth.contract(
+                    address=_sync_w3.to_checksum_address(settings.escrow_address),
+                    abi=ESCROW_ABI
+                )
+                terminate_calldata = _sync_escrow.encode_abi("terminatePolicy", args=[i])
+                
+                policies_found.append({
+                    "policy_id": i,
+                    "asset": policy[1],
+                    "coverage_amount": policy[2],
+                    "premium_paid": policy[3],
+                    "start_timestamp": policy[4],
+                    "timeout_duration": policy[5],
+                    "risk_bracket_tier": policy[6],
+                    "status": policy[7], # 0=Active, 1=Settled, 2=Refunded, 3=Claimed
+                    "terminate_calldata": terminate_calldata
+                })
+        except Exception as e:
+            logger.error(f"Error fetching policy {i}: {e}")
+            continue
+            
+    return {"policies": policies_found}
+
+@app.get("/v1/agent/policies")
+async def api_get_client_policies(client_address: str):
+    """
+    Retrieves all policies associated with a client address and provides intent-based termination calldata.
+    """
+    result = await fetch_client_policies_from_chain(client_address)
+    if "error" in result:
+        return JSONResponse(status_code=500, content=result)
+    return result
+
 @app.get("/v1/agent/runbook")
 async def api_get_runbook():
     """
@@ -267,6 +321,8 @@ This runbook equips agents with the exact workflow needed to successfully intera
    a) Target `approve_target_address` with input data `approve_calldata` (Approves the escrow contract).
    b) Target `escrow_contract_address` with input data `tx_calldata` (Creates the policy).
 6. **`msg.sender` Match:** Request the quote using your **AA Wallet address** as the `client_address`, otherwise `ECDSA.recover` will revert with `InvalidSignature`.
+7. **Intent-Based Termination:** If your strategy requires manually terminating a policy, you MUST use the `get_client_policies` tool first. This tool returns your active policies along with `terminate_calldata`. To terminate, execute a raw `contract-call`:
+   `contract-call --contract <escrow_contract_address> --input-data <terminate_calldata>`
 """
     return {"runbook": runbook.strip()}
 
@@ -440,43 +496,14 @@ This runbook equips agents with the exact workflow needed to successfully intera
    a) Target `approve_target_address` with input data `approve_calldata` (Approves the escrow contract).
    b) Target `escrow_contract_address` with input data `tx_calldata` (Creates the policy).
 6. **`msg.sender` Match:** Request the quote using your **AA Wallet address** as the `client_address`, otherwise `ECDSA.recover` will revert with `InvalidSignature`.
+7. **Intent-Based Termination:** If your strategy requires manually terminating a policy, you MUST use the `get_client_policies` tool first. This tool returns your active policies along with `terminate_calldata`. To terminate, execute a raw `contract-call`:
+   `contract-call --contract <escrow_contract_address> --input-data <terminate_calldata>`
 """
                 return [TextContent(type="text", text=runbook)]
 
             elif name == "get_client_policies":
-                client_address = arguments["client_address"].lower()
-                contract = risk_engine.w3.eth.contract(
-                    address=risk_engine.w3.to_checksum_address(settings.escrow_address),
-                    abi=ESCROW_ABI
-                )
-                
-                try:
-                    count = await contract.functions.policyCount().call()
-                except Exception as e:
-                    return [TextContent(type="text", text=json.dumps({"error": f"Failed to fetch policyCount: {e}"}, indent=2))]
-                    
-                policies_found = []
-                # Loop backwards to get recent policies first. Cap at checking last 500 to avoid long hangs.
-                min_id = max(1, count - 500)
-                for i in range(count, min_id - 1, -1):
-                    try:
-                        policy = await contract.functions.policies(i).call()
-                        if policy[0].lower() == client_address:
-                            policies_found.append({
-                                "policy_id": i,
-                                "asset": policy[1],
-                                "coverage_amount": policy[2],
-                                "premium_paid": policy[3],
-                                "start_timestamp": policy[4],
-                                "timeout_duration": policy[5],
-                                "risk_bracket_tier": policy[6],
-                                "status": policy[7] # 0=Active, 1=Settled, 2=Refunded, 3=Claimed
-                            })
-                    except Exception as e:
-                        logger.error(f"Error fetching policy {i}: {e}")
-                        continue
-                        
-                return [TextContent(type="text", text=json.dumps({"policies": policies_found}, indent=2))]
+                result = await fetch_client_policies_from_chain(arguments["client_address"])
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
             else:
                 raise ValueError(f"Unknown tool: {name}")
