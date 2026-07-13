@@ -66,6 +66,13 @@ ESCROW_ABI = [
         "outputs": [{"internalType": "uint256", "name": "policyId", "type": "uint256"}],
         "stateMutability": "nonpayable",
         "type": "function"
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "policyId", "type": "uint256"}],
+        "name": "terminatePolicy",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
     }
 ]
 
