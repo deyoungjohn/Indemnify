@@ -225,8 +225,8 @@ class OracleListener:
                         
                         aa_senders_by_tx = {}
                         for log in aa_logs:
-                            if len(log['topics']) > 1:
-                                sender = AsyncWeb3.to_checksum_address("0x" + log['topics'][1].hex()[-40:])
+                            if len(log['topics']) > 2:
+                                sender = AsyncWeb3.to_checksum_address("0x" + log['topics'][2].hex()[-40:])
                                 tx_hex = log['transactionHash'].hex()
                                 if tx_hex not in aa_senders_by_tx:
                                     aa_senders_by_tx[tx_hex] = set()
@@ -380,8 +380,8 @@ class OracleListener:
             
             aa_senders_by_tx = {}
             for log in aa_logs:
-                if len(log['topics']) > 1:
-                    sender = AsyncWeb3.to_checksum_address("0x" + log['topics'][1].hex()[-40:])
+                if len(log['topics']) > 2:
+                    sender = AsyncWeb3.to_checksum_address("0x" + log['topics'][2].hex()[-40:])
                     tx_hex = log['transactionHash'].hex()
                     if tx_hex not in aa_senders_by_tx:
                         aa_senders_by_tx[tx_hex] = set()
