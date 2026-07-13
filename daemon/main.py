@@ -2,6 +2,8 @@ import sys
 import json
 import logging
 import time
+import asyncio
+from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -11,6 +13,7 @@ from daemon.config import settings
 from daemon.risk_engine import RiskEngine
 from daemon.signer import CryptographicSigner
 from daemon.x402_middleware import verify_payment, build_402_response
+from daemon.oracle_listener import OracleListener
 from web3 import Web3
 
 # Configure Logging
@@ -114,10 +117,25 @@ class InsuranceQuoteResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # FastAPI Application Setup
 # ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize and start the Oracle Listener daemon in the background
+    listener = OracleListener()
+    task = asyncio.create_task(listener.start())
+    logger.info("Oracle listener daemon background task started.")
+    
+    yield
+    
+    # Graceful shutdown
+    logger.info("Stopping Oracle listener daemon...")
+    listener.stop()
+    await task
+
 app = FastAPI(
     title="Project Indemnify - Off-Chain Risk Middleware Daemon",
     description="Risk simulation, threat analysis, and cryptographic underwriting engine for M2M economy.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 @app.middleware("http")
@@ -540,14 +558,23 @@ async def run_stdio_mcp():
         print("Error: 'mcp' SDK is not installed.", file=sys.stderr)
         sys.exit(1)
     
+    listener = OracleListener()
+    task = asyncio.create_task(listener.start())
+    logger.info("Oracle listener daemon background task started.")
+    
     from mcp.server.stdio import stdio_server
     logger.info("Starting Indemnify MCP Server over Stdio...")
-    async with stdio_server() as (read_stream, write_stream):
-        await mcp_server.run(
-            read_stream,
-            write_stream,
-            mcp_server.create_initialization_options()
-        )
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await mcp_server.run(
+                read_stream,
+                write_stream,
+                mcp_server.create_initialization_options()
+            )
+    finally:
+        logger.info("Stopping Oracle listener daemon...")
+        listener.stop()
+        await task
 
 if __name__ == "__main__":
     # If launched with --mcp or --stdio, run stdio-based MCP server
