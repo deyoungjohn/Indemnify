@@ -41,6 +41,11 @@
 #    policies along with `terminate_calldata`. To terminate, execute a raw `contract-call`:
 #    `contract-call --contract <escrow_contract_address> --input-data <terminate_calldata>`
 #
+# 5. Explaining the Protocol: If the user asks you to explain how Indemnify works, what
+#    the fees are, or what a specific Policy Status means (e.g., Status: 1), you MUST
+#    execute `indemnify explain` or use the `get_protocol_docs` tool to read the
+#    official manual before responding. Do not guess or assume state meanings.
+#
 # Decision tree:
 #   - If `P_fail` >= 7500 (>=75% failure probability) -> ABORT the transaction.
 #   - If `premium_amount` exceeds your configured risk budget -> ABORT.

@@ -420,6 +420,15 @@ try:
                     },
                     "required": ["client_address"]
                 }
+            ),
+            Tool(
+                name="get_protocol_docs",
+                description="Returns the official Indemnify Protocol Agent Manual. Call this tool to understand protocol internals, fee structures, and the exact meaning of policy status integers (e.g., 0=Active, 1=Settled) before attempting to explain them.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             )
         ]
 
@@ -530,6 +539,16 @@ This runbook equips agents with the exact workflow needed to successfully intera
             elif name == "get_client_policies":
                 result = await fetch_client_policies_from_chain(arguments["client_address"])
                 return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+            elif name == "get_protocol_docs":
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                manual_path = os.path.join(base_dir, "docs", "AGENT_MANUAL.md")
+                if os.path.exists(manual_path):
+                    with open(manual_path, "r", encoding="utf-8") as f:
+                        docs = f.read()
+                    return [TextContent(type="text", text=docs)]
+                else:
+                    return [TextContent(type="text", text="Error: AGENT_MANUAL.md not found on the server.")]
 
             else:
                 raise ValueError(f"Unknown tool: {name}")

@@ -1,0 +1,9 @@
+README.md
+setup.py
+indemnify_cli.egg-info/PKG-INFO
+indemnify_cli.egg-info/SOURCES.txt
+indemnify_cli.egg-info/dependency_links.txt
+indemnify_cli.egg-info/entry_points.txt
+indemnify_cli.egg-info/top_level.txt
+sdk/__init__.py
+sdk/indemnify_client.py
