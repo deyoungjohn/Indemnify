@@ -146,6 +146,19 @@ async def add_cache_control_header(request: Request, call_next):
     response.headers["Expires"] = "0"
     return response
 
+from fastapi.exceptions import RequestValidationError
+from daemon.x402_middleware import verify_payment, build_402_response
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # OKX Validator sends empty/invalid bodies to check for 402. We must return 402 instead of 422.
+    if request.url.path == "/v1/insurance/quote":
+        return build_402_response()
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled exception occurred: {exc}")
