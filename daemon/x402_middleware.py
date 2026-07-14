@@ -24,6 +24,7 @@ def build_402_response() -> Response:
     """Returns the standard x402 challenge as a FastAPI Response."""
     payload = {
         "error": "Payment Required",
+        "x402Version": "1.0",
         "payment_requirements": {
             "amount": str(settings.x402_fee_usdt),
             "currency": "USDT0",
@@ -36,7 +37,8 @@ def build_402_response() -> Response:
     return Response(
         content=json.dumps(payload),
         status_code=402,
-        media_type="application/json"
+        media_type="application/json",
+        headers={"PAYMENT-REQUIRED": "true"}
     )
 
 def verify_payment(tx_hash: str) -> Tuple[bool, str]:
