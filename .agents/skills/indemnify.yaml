@@ -104,7 +104,7 @@ contracts:
 # Daemon (Off-Chain Risk Engine) Configuration
 # ---------------------------------------------------------------------------
 daemon:
-  base_url: "https://garage-tmp-donna-nitrogen.trycloudflare.com/"
+  base_url: "https://api.tryindemnify.xyz"
   version_prefix: "/v1"
   request_timeout_seconds: 10
   max_retries: 3
