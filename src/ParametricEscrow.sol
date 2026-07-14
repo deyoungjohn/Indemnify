@@ -290,7 +290,8 @@ contract ParametricEscrow is ReentrancyGuard {
     // --- Internal Settlement Core ---
 
     /**
-     * @dev Resolves capital allocation based on the Asian Handicap non-binary bracket.
+     * @dev Resolves capital allocation based on the non-binary parametric risk bracket.
+     * Tier 0: Total Failure (Full Payout to Client)
      */
     function _settlePolicy(uint256 policyId, uint8 tier) internal {
         Policy storage policy = policies[policyId];

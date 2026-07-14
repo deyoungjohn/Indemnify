@@ -32,3 +32,5 @@ venv/
 # Node
 node_modules/
 lib/
+
+ignored_scripts/

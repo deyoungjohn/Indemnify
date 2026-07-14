@@ -22,7 +22,7 @@ The smart contract framework bypasses traditional binary (pass/fail) insurance e
 *   `ParametricEscrow.sol`: The core engine responsible for policy minting, premium locking, and programmatic claim disbursement.
 
 ### 2.2 Advanced Financial Mechanics
-*   **Non-Binary Bracketed Risk Matrices:** Multi-agent workflows frequently suffer from partial execution failures (e.g., a cross-chain agent successfully bridges assets to a target layer but fails to execute the final decentralized exchange swap due to a sudden liquidity crunch). The escrow contract implements a bracketed risk tiering system structurally modeled after **Asian Handicap** sports wagering mechanics. Rather than an all-or-nothing settlement, payouts are prorated dynamically based on the specific tier of execution achieved before failure occurs.
+*   **Non-Binary Bracketed Risk Matrices:** Multi-agent workflows frequently suffer from partial execution failures (e.g., a cross-chain agent successfully bridges assets to a target layer but fails to execute the final decentralized exchange swap due to a sudden liquidity crunch). The escrow contract implements a bracketed risk tiering system structurally modeled after non-binary parametric risk brackets. Rather than an all-or-nothing settlement, payouts are prorated dynamically based on the specific tier of execution achieved before failure occurs.
 *   **Dynamic Escrow Release (Programmatic Partial Cashout):** For extended, long-running agent workflows (e.g., 48-hour arbitrage loops or multi-step staking strategies), execution can enter unpredicted stalled states without explicitly triggering a hard on-chain revert. Client agents can invoke a programmatic termination clause. The contract evaluates the elapsed block time and current execution status via decentralized oracles, allowing the agent to execute a partial cashout—retrieving a dynamically calculated percentage of their escrowed premium to restore capital velocity.
 
 ---
@@ -88,3 +88,22 @@ forge verify-contract <CONTRACT_ADDRESS> <CONTRACT_PATH>:<CONTRACT_NAME> \
   --verifier oklink \
   --verifier-url "https://www.oklink.com/api/v5/explorer/contract/verify-source-code-plugin/XLAYER"
 ```
+
+### OKX AI Marketplace: X402 Payment Middleware vs AA Wallets
+When implementing X402 Payment checks for the OKX AI Marketplace:
+1. **Never check `tx.to == token_address`**: OKX OnchainOS uses Account Abstraction (AA) wallets. AA transactions hit a top-level router (e.g., `0x0000…2e032`), NOT the token directly.
+2. **Read the Transfer Logs**: To verify a payment, always query the transaction receipt via `eth_getTransactionReceipt` and parse the internal `Transfer` logs (`topic0 = 0xddf2...`) to confirm the `pay_to_address` and `amount`.
+3. **HTTP 402 Validator Bypass**: OKX's automated marketplace validator sends an empty `POST` payload without payment headers to test if your endpoint correctly returns a 402. In FastAPI, this normally triggers a `422 Unprocessable Entity` due to missing Pydantic fields. **Fix:** Add a global `RequestValidationError` exception handler that intercepts requests to your endpoint and returns `402 Payment Required` (with `PAYMENT-REQUIRED: true` in headers) *before* the 422 triggers.
+
+### OKX AI Marketplace: EIP-712 Signatures & AA Wallets
+1. Ensure your off-chain daemon extracts the `client_address` dynamically from the request payload to sign the quote. Hardcoding anvil or EOA addresses will cause the `ecrecover` logic in `createPolicy` to fail silently when an AA wallet attempts to execute the transaction.
+
+### WSL 2 Networking Bugs (NPM `ETIMEDOUT` / OKX A2A Setup)
+When running `okx-a2a doctor --fix` in WSL 2, you may encounter `ETIMEDOUT` errors trying to download plugins from the NPM registry. This is caused by Windows Hypervisor dropping packets or breaking DNS sync. Apply this triple-fix in Ubuntu:
+1. **Lower MTU Size:** `sudo ip link set dev eth0 mtu 1400`
+2. **Disable IPv6:** `sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1` and `sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1`
+3. **Hardcode Google DNS:** Overwrite `/etc/resolv.conf` with `nameserver 8.8.8.8` (If this fails, run `wsl --shutdown` from native Windows PowerShell to reboot the adapter).
+
+### OKX A2A Plugin Prerequisites (Node.js & AI Provider)
+1. The `@okxweb3/a2a-node` package requires the experimental `node:sqlite` database, which strictly requires **Node.js >= v22.14.0**. If you see `ERR_UNKNOWN_BUILTIN_MODULE: node:sqlite`, upgrade Node via NVM (`nvm install 22`).
+2. Before running `onchainos agent activate`, you must explicitly bind an AI provider or it will fail. Run: `okx-a2a ai-provider set --provider hermes`.
