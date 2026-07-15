@@ -14,6 +14,7 @@ from daemon.risk_engine import RiskEngine
 from daemon.signer import CryptographicSigner
 from daemon.x402_middleware import verify_payment, build_402_response
 from daemon.oracle_listener import OracleListener
+from daemon.intent_parser import TransactionIntent, parse_intent
 from web3 import Web3
 
 # Configure Logging
@@ -84,8 +85,9 @@ ESCROW_ABI = [
 # ---------------------------------------------------------------------------
 class RiskSimulateRequest(BaseModel):
     client_address: str = Field(..., description="Client address submitting the transaction")
-    target_contract: str = Field(..., description="Contract being interacted with")
-    calldata_hex: str = Field(..., description="Hex encoded calldata payload")
+    target_contract: Optional[str] = Field(default=None, description="Contract being interacted with")
+    calldata_hex: Optional[str] = Field(default=None, description="Hex encoded calldata payload")
+    intent: Optional[TransactionIntent] = Field(default=None, description="Human readable intent structure")
     value_wei: int = Field(default=0, description="Value sent in wei")
     coverage_requested: int = Field(..., description="Coverage amount requested")
 
@@ -96,8 +98,9 @@ class RiskSimulateResponse(BaseModel):
 
 class InsuranceQuoteRequest(BaseModel):
     client_address: str = Field(..., description="Client address submitting the transaction")
-    target_contract: str = Field(..., description="Contract being interacted with")
-    calldata_hex: str = Field(..., description="Hex encoded calldata payload")
+    target_contract: Optional[str] = Field(default=None, description="Contract being interacted with")
+    calldata_hex: Optional[str] = Field(default=None, description="Hex encoded calldata payload")
+    intent: Optional[TransactionIntent] = Field(default=None, description="Human readable intent structure")
     value_wei: int = Field(default=0, description="Value sent in wei")
     coverage_requested: int = Field(..., description="Coverage amount requested")
     timeout_duration: int = Field(..., description="Timeout duration in seconds")
@@ -186,10 +189,23 @@ async def api_simulate_risk(payload: RiskSimulateRequest):
     """
     start_time = time.perf_counter()
     try:
+        # Resolve intent if provided
+        target_contract = payload.target_contract
+        calldata_hex = payload.calldata_hex
+        
+        if payload.intent:
+            try:
+                target_contract, calldata_hex = parse_intent(payload.intent)
+            except ValueError as e:
+                return JSONResponse(status_code=400, content={"error": f"Intent error: {str(e)}"})
+                
+        if not target_contract or not calldata_hex:
+            return JSONResponse(status_code=400, content={"error": "Must provide either intent or both target_contract and calldata_hex"})
+            
         result = await risk_engine.simulate_transaction_risk(
             client_address=payload.client_address,
-            target_contract=payload.target_contract,
-            calldata_hex=payload.calldata_hex,
+            target_contract=target_contract,
+            calldata_hex=calldata_hex,
             value_wei=payload.value_wei,
             coverage_requested=payload.coverage_requested
         )
@@ -223,11 +239,24 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
 
     start_time = time.perf_counter()
     try:
+        # Resolve intent if provided
+        target_contract = payload.target_contract
+        calldata_hex = payload.calldata_hex
+        
+        if payload.intent:
+            try:
+                target_contract, calldata_hex = parse_intent(payload.intent)
+            except ValueError as e:
+                return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": f"Intent error: {str(e)}"})
+                
+        if not target_contract or not calldata_hex:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Must provide either intent or both target_contract and calldata_hex"})
+            
         # 1. Run risk simulation to get P_fail
         sim_result = await risk_engine.simulate_transaction_risk(
             client_address=payload.client_address,
-            target_contract=payload.target_contract,
-            calldata_hex=payload.calldata_hex,
+            target_contract=target_contract,
+            calldata_hex=calldata_hex,
             value_wei=payload.value_wei,
             coverage_requested=payload.coverage_requested
         )

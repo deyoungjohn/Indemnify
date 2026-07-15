@@ -30,9 +30,16 @@
 # 3. Relaxed 1-Hour Expiry: Quotes expire exactly 1 hour after generation.
 #    You have plenty of time to debug your execution sequence without pausing
 #    worrying about SignatureExpired (0x0819bdcd) reverts.
-# 4. Intent-Based Execution: Do NOT attempt to manually encode the ABI. The quote 
-#    response provides all targets and calldata. You must execute two raw 
-#    `contract-call` intents in order:
+# 4. Human-Readable Intents vs Raw Calldata: Do NOT attempt to manually encode the ABI 
+#    unless explicitly required. You should pass a human-readable `intent` object 
+#    (e.g., `{"action": "swap", "protocol": "quickswap", "token_in": "0x...", "token_out": "0x...", "amount_in": 1000}`)
+#    The backend will automatically resolve the target contract and build the calldata.
+#    Supported protocols: quickswap, uniswap, aave, curve, potatoeswap.
+#    If the user's protocol is NOT in this list, ONLY THEN you must manually 
+#    encode the ABI and provide `target_contract` and `calldata_hex` instead of `intent`.
+#
+# 5. Intent-Based Execution: The quote response provides all targets and calldata. 
+#    You must execute two raw `contract-call` intents in order:
 #    a) `contract-call --contract <approve_target_address> --input-data <approve_calldata>`
 #    b) `contract-call --contract <escrow_contract_address> --input-data <tx_calldata>`
 #
@@ -154,8 +161,6 @@ tools:
       type: object
       required:
         - client_address
-        - target_contract
-        - calldata_hex
         - coverage_requested
         - timeout_duration
         - payment_tx_hash
@@ -170,6 +175,15 @@ tools:
             embedded into the oracle signature and cannot be changed post-quote.
           example: "0xAbCd1234abcd1234AbCd1234abcd1234AbCd1234"
 
+        intent:
+          type: object
+          description: >
+            Human-readable intent. Optional. If provided, the backend will automatically 
+            generate the target_contract and calldata_hex. 
+            Must include "action" (swap, supply, transfer, approve) and "token_in".
+            Example: {"action": "swap", "protocol": "quickswap", "token_in": "0x...", "token_out": "0x...", "amount_in": 1000}
+            Supported protocols: quickswap, uniswap, aave, curve, potatoeswap.
+
         target_contract:
           type: string
           format: ethereum-address
@@ -178,17 +192,17 @@ tools:
             The checksummed EVM address of the smart contract that will receive
             the transaction being insured (e.g., a DEX router, bridge, or
             staking vault). Used to fetch on-chain bytecode for risk analysis.
+            Required if `intent` is not provided.
           example: "0xRouterContractAddress000000000000000000000"
 
         calldata_hex:
           type: string
           pattern: "^(0x)?[0-9a-fA-F]*$"
           description: >
-            The ABI-encoded transaction calldata in hexadecimal format,
-            including the 4-byte function selector. This is the exact payload
-            that would be broadcast to the network. The risk engine
-            disassembles this to detect malicious control flows, reentrancy
-            vectors, and dangerous external calls.
+            The raw, ABI-encoded hexadecimal payload for the transaction. This
+            is strictly required for the MCP daemon to run the local EVM fork
+            simulation and generate the threat matrix.
+            Required if `intent` is not provided.
           example: "0x38ed1739000000000000000000000000..."
 
         coverage_requested:
@@ -345,8 +359,6 @@ tools:
       type: object
       required:
         - client_address
-        - target_contract
-        - calldata_hex
         - coverage_requested
       properties:
         client_address:
@@ -355,15 +367,24 @@ tools:
           description: "The agent or EOA address originating the transaction."
           example: "0xAbCd1234abcd1234AbCd1234abcd1234AbCd1234"
 
+        intent:
+          type: object
+          description: >
+            Human-readable intent. Optional. If provided, the backend will automatically 
+            generate the target_contract and calldata_hex. 
+            Must include "action" (swap, supply, transfer, approve) and "token_in".
+            Example: {"action": "swap", "protocol": "quickswap", "token_in": "0x...", "token_out": "0x...", "amount_in": 1000}
+            Supported protocols: quickswap, uniswap, aave, curve, potatoeswap.
+
         target_contract:
           type: string
           format: ethereum-address
-          description: "The destination contract address receiving the call."
+          description: "The destination contract address receiving the call. Required if `intent` is not provided."
           example: "0xTargetContract0000000000000000000000000"
 
         calldata_hex:
           type: string
-          description: "Hex-encoded ABI calldata including the 4-byte selector."
+          description: "Hex-encoded ABI calldata including the 4-byte selector. Required if `intent` is not provided."
           example: "0x38ed1739..."
 
         value_wei:
