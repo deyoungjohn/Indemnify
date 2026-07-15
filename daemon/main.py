@@ -5,7 +5,7 @@ import time
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -104,7 +104,6 @@ class InsuranceQuoteRequest(BaseModel):
     value_wei: int = Field(default=0, description="Value sent in wei")
     coverage_requested: int = Field(..., description="Coverage amount requested")
     timeout_duration: int = Field(..., description="Timeout duration in seconds")
-    payment_tx_hash: str = Field(..., description="The transaction hash of the 0.01 USDT0 fee payment")
     asset: Optional[str] = Field(default=None, description="ERC20 asset address. If not provided, uses pool asset.")
 
 class InsuranceQuoteResponse(BaseModel):
@@ -234,13 +233,13 @@ async def check_x402_options():
     return build_402_response()
 
 @app.post("/v1/insurance/quote")
-async def api_generate_quote(payload: InsuranceQuoteRequest):
+async def api_generate_quote(payload: InsuranceQuoteRequest, x_402_payment: Optional[str] = Header(None)):
     """
     Computes P_fail, dynamic premium, and returns an oracle-signed quote matching ParametricEscrow.sol interface.
     """
-    # 0. Check 402 Payment
-    if payload.payment_tx_hash:
-        success, reason = verify_payment(payload.payment_tx_hash)
+    # 0. Check 402 Payment via Header
+    if x_402_payment:
+        success, reason = verify_payment(x_402_payment)
         if not success:
             return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": reason})
     else:

@@ -22,12 +22,11 @@
 # multi-step arbitrage loop, or inter-protocol staking transaction, you MUST
 # invoke the `generate_insurance_quote` tool with the raw transaction details.
 #
-# 1. 402 Payment: Every quote requires a fresh 0.01 USDT0 payment. Payments are
-#    routed via your AA wallet.
-# 2. Pass the Hash: After broadcasting the 402 payment, **wait ~10 seconds** 
-#    before requesting the quote to allow RPC nodes to index it. Pass the exact 
-#    transaction hash in the `payment_tx_hash` parameter.
-# 3. Relaxed 1-Hour Expiry: Quotes expire exactly 1 hour after generation.
+# 1. 402 Payment: Every quote requires a fresh 0.01 USDT0 payment.
+#    You DO NOT need to pass the payment_tx_hash in the payload. The OKX A2MCP framework 
+#    will automatically intercept the 402 challenge, prompt for payment, and append the 
+#    `X-402-Payment` header to the request.
+# 2. Relaxed 1-Hour Expiry: Quotes expire exactly 1 hour after generation.
 #    You have plenty of time to debug your execution sequence without pausing
 #    worrying about SignatureExpired (0x0819bdcd) reverts.
 # 4. Human-Readable Intents vs Raw Calldata: Do NOT attempt to manually encode the ABI 
@@ -163,7 +162,6 @@ tools:
         - client_address
         - coverage_requested
         - timeout_duration
-        - payment_tx_hash
       properties:
         client_address:
           type: string
@@ -226,15 +224,6 @@ tools:
             For cross-chain bridges, set this to the maximum estimated
             finality time plus a 20% buffer.
           example: 3600
-
-        payment_tx_hash:
-          type: string
-          pattern: "^(0x)?[0-9a-fA-F]{64}$"
-          description: >
-            The transaction hash of the 0.01 USDT0 fee payment. The risk engine
-            will verify this transaction on-chain before issuing the quote.
-            Wait ~10s after broadcasting the payment before sending this request.
-          example: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 
         asset:
           type: string
