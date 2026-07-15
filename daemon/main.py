@@ -151,9 +151,17 @@ from daemon.x402_middleware import verify_payment, build_402_response
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # OKX Validator sends empty/invalid bodies to check for 402. We must return 402 instead of 422.
+    # OKX Validator sends empty/invalid bodies to check for 402.
     if request.url.path == "/v1/insurance/quote":
-        return build_402_response()
+        # Check if the body is truly empty (OKX Validator test)
+        try:
+            body = getattr(exc, "body", None)
+            if not body or body == {} or body == "null":
+                return build_402_response()
+        except Exception:
+            pass
+            
+    # For real agents sending malformed JSON payloads, return 422 so they can self-correct!
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": exc.errors(), "body": exc.body},
