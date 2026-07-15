@@ -224,6 +224,15 @@ async def api_simulate_risk(payload: RiskSimulateRequest):
             }
         )
 
+@app.get("/v1/insurance/quote")
+async def check_x402_get():
+    # OKX Validator uses curl -i (GET) to check for 402 Payment Required
+    return build_402_response()
+
+@app.options("/v1/insurance/quote")
+async def check_x402_options():
+    return build_402_response()
+
 @app.post("/v1/insurance/quote")
 async def api_generate_quote(payload: InsuranceQuoteRequest):
     """
