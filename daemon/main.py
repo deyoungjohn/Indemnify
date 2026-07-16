@@ -5,14 +5,13 @@ import time
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
-from fastapi import FastAPI, HTTPException, Request, status, Header
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from daemon.config import settings
 from daemon.risk_engine import RiskEngine
 from daemon.signer import CryptographicSigner
-from daemon.x402_middleware import verify_payment, build_402_response
 from daemon.oracle_listener import OracleListener
 from daemon.intent_parser import TransactionIntent, parse_intent
 from web3 import Web3
@@ -223,27 +222,11 @@ async def api_simulate_risk(payload: RiskSimulateRequest):
             }
         )
 
-@app.get("/v1/insurance/quote")
-async def check_x402_get():
-    # OKX Validator uses curl -i (GET) to check for 402 Payment Required
-    return build_402_response()
-
-@app.options("/v1/insurance/quote")
-async def check_x402_options():
-    return build_402_response()
-
 @app.post("/v1/insurance/quote")
-async def api_generate_quote(payload: InsuranceQuoteRequest, x_402_payment: Optional[str] = Header(None)):
+async def api_generate_quote(payload: InsuranceQuoteRequest):
     """
     Computes P_fail, dynamic premium, and returns an oracle-signed quote matching ParametricEscrow.sol interface.
     """
-    # 0. Check 402 Payment via Header
-    if x_402_payment:
-        success, reason = verify_payment(x_402_payment)
-        if not success:
-            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": reason})
-    else:
-        return build_402_response()
 
     start_time = time.perf_counter()
     try:

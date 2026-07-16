@@ -16,9 +16,7 @@ intent_payload = {
         "amount_in": 1000000
     }
 }
-headers = {"X-402-Payment": "0xabc123"}
-response = client.post("/v1/insurance/quote", json=intent_payload, headers=headers)
+response = client.post("/v1/insurance/quote", json=intent_payload)
 print(f"Status: {response.status_code}")
-# The response should ideally be 200 OK or 400 with a payment error since "0xabc123" is a fake hash.
-# If it's a payment error, we know the intent parsing and header extraction succeeded!
+# The response should be 200 OK because quotes are now 100% FREE!
 print(f"Body: {response.text}\n")
