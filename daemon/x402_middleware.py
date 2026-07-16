@@ -1,4 +1,5 @@
 import json
+import base64
 import logging
 from typing import Set, Dict, Tuple
 from fastapi import Response
@@ -22,23 +23,32 @@ w3 = Web3(Web3.HTTPProvider(settings.rpc_provider_url))
 
 def build_402_response() -> Response:
     """Returns the standard x402 challenge as a FastAPI Response."""
-    payload = {
-        "error": "Payment Required",
+    challenge = {
         "x402Version": "1.0",
-        "payment_requirements": {
-            "amount": str(settings.x402_fee_usdt),
-            "currency": "USDT0",
-            "token_address": USDT0_ADDRESS,
-            "pay_to_address": settings.x402_treasury_address,
-            "network_id": str(settings.chain_id),
-            "chain": "X Layer"
-        }
+        "resource": "DeFi Transaction Insurance Quote",
+        "accepts": [
+            {
+                "scheme": "onchain",
+                "network": str(settings.chain_id),
+                "asset": USDT0_ADDRESS,
+                "amount": str(settings.x402_fee_usdt),
+                "payTo": settings.x402_treasury_address,
+                "maxTimeoutSeconds": 3600,
+                "extra": ""
+            }
+        ]
     }
+    
+    challenge_json = json.dumps(challenge)
+    challenge_b64 = base64.b64encode(challenge_json.encode('utf-8')).decode('utf-8')
+    
+    payload = {"error": "Payment Required. See PAYMENT-REQUIRED header for challenge."}
+    
     return Response(
         content=json.dumps(payload),
         status_code=402,
         media_type="application/json",
-        headers={"PAYMENT-REQUIRED": "true"}
+        headers={"PAYMENT-REQUIRED": challenge_b64}
     )
 
 def verify_payment(tx_hash: str) -> Tuple[bool, str]:
