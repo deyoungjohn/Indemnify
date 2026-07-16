@@ -233,6 +233,28 @@ async def api_simulate_risk(payload: RiskSimulateRequest):
             }
         )
 
+@app.get("/v1/insurance/quote")
+async def check_get():
+    # OKX Validator uses curl -i (GET) to check the endpoint. 
+    # For a "Free" endpoint, it expects a 200 OK with data.
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "premium_amount": 10000000000000000,
+            "quote_id": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "deadline": 1800000000,
+            "signature": "0x",
+            "approve_target_address": "0x779ded0c9e1022225f8e0630b35a9b54be713736",
+            "approve_calldata": "0x",
+            "escrow_contract_address": settings.escrow_address,
+            "tx_calldata": "0x"
+        }
+    )
+
+@app.options("/v1/insurance/quote")
+async def check_options():
+    return await check_get()
+
 @app.post("/v1/insurance/quote")
 async def api_generate_quote(payload: InsuranceQuoteRequest):
     """
