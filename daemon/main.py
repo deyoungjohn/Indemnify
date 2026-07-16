@@ -287,7 +287,8 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
         p_fail = sim_result["P_fail"]
 
         # 2. Get asset token decimals dynamically
-        asset_addr = payload.asset or settings.escrow_address  # Fallback to escrow address if not provided
+        DEFAULT_ASSET = "0x779ded0c9e1022225f8e0630b35a9b54be713736" if settings.chain_id != 31337 else "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+        asset_addr = payload.asset or DEFAULT_ASSET
         decimals = await risk_engine.get_token_decimals(asset_addr)
 
         # 3. Apply mathematical pricing formula
