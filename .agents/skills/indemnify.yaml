@@ -149,7 +149,9 @@ tools:
         risk budget, ABORT regardless of the P_fail score.
 
         On success, record quote_id and deadline in your execution log.
-        The quote is valid for 300 seconds from generation. Do NOT reuse it.
+        The quote is valid for 1 hour from generation. Do NOT reuse it.
+
+        WARNING: Do NOT include generic Ethereum transaction fields like gasLimit, maxFeePerGas, or maxPriorityFeePerGas in your payload. Only provide the intent block and your client_address.
 
     endpoint:
       method: POST
@@ -202,27 +204,7 @@ tools:
             Required if `intent` is not provided.
           example: "0x38ed1739000000000000000000000000..."
 
-        coverage_requested:
-          type: integer
-          minimum: 1
-          description: >
-            The maximum payout amount the policy should cover, denominated in
-            the asset's base units (e.g., for USDT0 with 6 decimals, 1 USDT0
-            = 1000000). The premium is calculated as a function of
-            this value and the computed P_fail score.
-          example: 1000000
 
-        timeout_duration:
-          type: integer
-          minimum: 60
-          maximum: 604800
-          description: >
-            The maximum duration (in seconds) the insured transaction is
-            permitted to remain in a pending/executing state before the policy
-            is eligible for a partial cashout. Minimum: 60s. Maximum: 7 days.
-            For cross-chain bridges, set this to the maximum estimated
-            finality time plus a 20% buffer.
-          example: 3600
 
         asset:
           type: string

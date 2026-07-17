@@ -101,8 +101,8 @@ class InsuranceQuoteRequest(BaseModel):
     calldata_hex: Optional[str] = Field(default=None, description="Hex encoded calldata payload")
     intent: Optional[TransactionIntent] = Field(default=None, description="Human readable intent structure")
     value_wei: int = Field(default=0, description="Value sent in wei")
-    coverage_requested: int = Field(..., description="Coverage amount requested")
-    timeout_duration: int = Field(..., description="Timeout duration in seconds")
+    coverage_requested: Optional[int] = Field(default=None, description="Coverage amount requested")
+    timeout_duration: Optional[int] = Field(default=86400, description="Timeout duration in seconds")
     asset: Optional[str] = Field(default=None, description="ERC20 asset address. If not provided, uses pool asset.")
 
 class InsuranceQuoteResponse(BaseModel):
@@ -276,13 +276,24 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
         if not target_contract or not calldata_hex:
             return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Must provide either intent or both target_contract and calldata_hex"})
             
+        # Determine coverage requested
+        resolved_coverage = payload.coverage_requested
+        if resolved_coverage is None:
+            if payload.intent and payload.intent.amount_in:
+                resolved_coverage = int(payload.intent.amount_in)
+            else:
+                resolved_coverage = payload.value_wei
+        
+        if resolved_coverage <= 0:
+            return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"error": "Could not infer a coverage amount > 0 from intent amount_in or value_wei."})
+
         # 1. Run risk simulation to get P_fail
         sim_result = await risk_engine.simulate_transaction_risk(
             client_address=payload.client_address,
             target_contract=target_contract,
             calldata_hex=calldata_hex,
             value_wei=payload.value_wei,
-            coverage_requested=payload.coverage_requested
+            coverage_requested=resolved_coverage
         )
         p_fail = sim_result["P_fail"]
 
@@ -294,7 +305,7 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
         # 3. Apply mathematical pricing formula
         # Premium = (CoverageRequested * P_fail) / 10000 + FixedUnderwriterMargin
         fixed_margin_scaled = int(settings.fixed_underwriter_margin * (10 ** decimals))
-        premium_amount = int((payload.coverage_requested * p_fail) // 10000) + fixed_margin_scaled
+        premium_amount = int((resolved_coverage * p_fail) // 10000) + fixed_margin_scaled
 
         # 4. Generate unique quote ID (bytes32) and deadline (timestamp + 3600s = 1 hour)
         quote_id_bytes = signer.generate_quote_id()
@@ -305,7 +316,7 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
         signature_hex = signer.sign_quote(
             client_address=payload.client_address,
             asset=asset_addr,
-            coverage_amount=payload.coverage_requested,
+            coverage_amount=resolved_coverage,
             premium_amount=premium_amount,
             timeout_duration=payload.timeout_duration,
             deadline=deadline,
@@ -316,7 +327,7 @@ async def api_generate_quote(payload: InsuranceQuoteRequest):
         _escrow_contract = _sync_w3.eth.contract(address=_sync_w3.to_checksum_address(settings.escrow_address), abi=ESCROW_ABI)
         tx_calldata = _escrow_contract.encode_abi("createPolicy", args=[
             _sync_w3.to_checksum_address(asset_addr),
-            payload.coverage_requested,
+            resolved_coverage,
             premium_amount,
             payload.timeout_duration,
             deadline,

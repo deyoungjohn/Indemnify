@@ -6,8 +6,6 @@ client = TestClient(app)
 print("Test 3: Intent-Based Swap")
 intent_payload = {
     "client_address": "0x2348d825ca5a45bd1301d6eeca5436102ed5735f",
-    "coverage_requested": 500000,
-    "timeout_duration": 300,
     "intent": {
         "action": "swap",
         "protocol": "quickswap",
