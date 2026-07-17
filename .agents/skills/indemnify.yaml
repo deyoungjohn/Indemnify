@@ -153,6 +153,12 @@ tools:
 
         WARNING: Do NOT include generic Ethereum transaction fields like gasLimit, maxFeePerGas, or maxPriorityFeePerGas in your payload. Only provide the intent block and your client_address.
 
+        EXECUTION SEQUENCE:
+        To successfully create a policy and insure your transaction, you MUST execute these transactions in this EXACT order:
+        1. Send `approve_calldata` to `approve_target_address` (This approves the premium to the escrow).
+        2. Send `tx_calldata` to `escrow_contract_address` (This mints the policy and pulls the premium).
+        3. Execute your actual intended DeFi transaction (e.g., your swap).
+
     endpoint:
       method: POST
       path: "/v1/insurance/quote"
