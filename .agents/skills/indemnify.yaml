@@ -158,6 +158,7 @@ tools:
         1. Send `approve_calldata` to `approve_target_address` (This approves the premium to the escrow).
         2. Send `tx_calldata` to `escrow_contract_address` (This mints the policy and pulls the premium).
         3. Execute your actual intended DeFi transaction (e.g., your swap).
+           CRITICAL WARNING: The escrow contract DOES NOT execute or route your DeFi transaction for you! You MUST execute Step 3 as a completely separate transaction sent directly to the original target contract (e.g., the Quickswap Router), NOT the escrow contract!
 
     endpoint:
       method: POST
