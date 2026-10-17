@@ -34,3 +34,5 @@ node_modules/
 lib/
 
 ignored_scripts/
+indemnify_dump/
+indemnify_recording/
